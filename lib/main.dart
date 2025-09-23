@@ -1,10 +1,13 @@
-// lib/main.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'pages/event_viewer_page.dart';
+import 'services/notification_service.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // 시스템 UI 스타일(상태바/내비게이션바)
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
@@ -15,6 +18,9 @@ void main() {
       systemNavigationBarContrastEnforced: false,
     ),
   );
+
+  // 로컬 알림 초기화
+  await NotiService.I.init();
 
   runApp(const MyApp());
 }
@@ -27,6 +33,12 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'Sound Sense',
       debugShowCheckedModeBanner: false,
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      supportedLocales: const [Locale('ko', 'KR'), Locale('en', 'US')],
       theme: ThemeData(
         useMaterial3: true,
         scaffoldBackgroundColor: const Color(0xFFF9FBFD),
@@ -36,6 +48,7 @@ class MyApp extends StatelessWidget {
           elevation: 4,
           surfaceTintColor: Colors.transparent,
         ),
+
         appBarTheme: const AppBarTheme(
           backgroundColor: Color(0xFFF9FBFD),
           elevation: 0,

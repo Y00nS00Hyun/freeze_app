@@ -1,11 +1,10 @@
-// lib/pages/yolo_page.dart
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:google_fonts/google_fonts.dart';
 import '../models/events.dart';
+import '../widgets/yolo_card.dart';
 
-class YoloPage extends StatelessWidget {
+class YoloPage extends StatefulWidget {
   const YoloPage({
     super.key,
     required this.items,
@@ -15,6 +14,13 @@ class YoloPage extends StatelessWidget {
   final List<YoloEvent> items;
   final String? imageBaseUrl;
 
+  @override
+  State<YoloPage> createState() => _YoloPageState();
+}
+
+class _YoloPageState extends State<YoloPage> {
+  DateTime? _selectedDate;
+
   // URL 정규화(절대/상대/127.0.0.1 교정)
   String? _normalizeUrl(String? url) {
     if (url == null) return null;
@@ -22,7 +28,7 @@ class YoloPage extends StatelessWidget {
     if (s.isEmpty) return null;
     if (s.startsWith('data:')) return s;
 
-    final baseStr = imageBaseUrl?.trim();
+    final baseStr = widget.imageBaseUrl?.trim();
     final base = (baseStr != null && baseStr.isNotEmpty)
         ? Uri.tryParse(baseStr)
         : null;
@@ -62,17 +68,12 @@ class YoloPage extends StatelessWidget {
     }
 
     if (lower.endsWith('.mp4')) {
-      // 같은 경로에서 확장자만 jpg로
-      final a = file.replaceFirst(
-        RegExp(r'\.mp4$', caseSensitive: false),
-        '.jpg',
-      );
-      return a;
+      return file.replaceFirst(RegExp(r'\.mp4$', caseSensitive: false), '.jpg');
     }
 
     final name = _fileNameFromEpoch(y.time);
-    if (name != null && imageBaseUrl != null) {
-      final base = imageBaseUrl!.replaceAll(RegExp(r'/+$'), '');
+    if (name != null && widget.imageBaseUrl != null) {
+      final base = widget.imageBaseUrl!.replaceAll(RegExp(r'/+$'), '');
       return '$base/$name';
     }
     return null;
@@ -91,299 +92,225 @@ class YoloPage extends StatelessWidget {
     return '${dt.year}_${two(dt.month)}_${two(dt.day)}_${two(dt.hour)}${two(dt.minute)}${two(dt.second)}.jpg';
   }
 
+  String _dateKeyFromEpoch(int? epochSec) {
+    if (epochSec == null) return 'unknown';
+    final dt = DateTime.fromMillisecondsSinceEpoch(
+      epochSec * 1000,
+      isUtc: true,
+    ).toLocal();
+    String two(int v) => v.toString().padLeft(2, '0');
+    return '${dt.year}-${two(dt.month)}-${two(dt.day)}';
+  }
+
+  bool _isSameCalendarDate(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
+
+  Future<void> _pickDate(BuildContext context, List<YoloEvent> pool) async {
+    final times = pool.map((e) => e.time ?? 0).where((t) => t > 0).toList();
+    times.sort();
+    final now = DateTime.now();
+    final first = times.isEmpty
+        ? now.subtract(const Duration(days: 365))
+        : DateTime.fromMillisecondsSinceEpoch(
+            times.first * 1000,
+            isUtc: true,
+          ).toLocal();
+    final last = times.isEmpty
+        ? now
+        : DateTime.fromMillisecondsSinceEpoch(
+            times.last * 1000,
+            isUtc: true,
+          ).toLocal();
+
+    final initial = _selectedDate ?? last;
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(first.year, first.month, first.day),
+      lastDate: DateTime(last.year, last.month, last.day),
+      helpText: '날짜 선택',
+      cancelText: '취소',
+      confirmText: '확인',
+      locale: const Locale('ko', 'KR'),
+    );
+    if (!mounted) return;
+    if (picked != null) setState(() => _selectedDate = picked);
+  }
+
   @override
   Widget build(BuildContext context) {
+    // 1) 유효 항목만 필터
     final visibleItems = <YoloEvent>[];
-    for (final y in items) {
-      // ★ label 유효성 체크(비어있거나 "null"은 스킵)
+    for (final y in widget.items) {
       final rawLabel = y.label.trim();
-      if (rawLabel.isEmpty || rawLabel.toLowerCase() == 'null') {
-        continue;
-      }
+      if (rawLabel.isEmpty || rawLabel.toLowerCase() == 'null') continue;
 
       final raw = _pickDisplayImage(y);
       final url = _normalizeUrl(raw);
       final ok = url != null && (Uri.tryParse(url)?.hasScheme ?? false);
-      if (ok) visibleItems.add(y);
+      if (!ok) continue;
+
+      if (_selectedDate != null && y.time != null) {
+        final dt = DateTime.fromMillisecondsSinceEpoch(
+          y.time! * 1000,
+          isUtc: true,
+        ).toLocal();
+        if (!_isSameCalendarDate(dt, _selectedDate!)) continue;
+      }
+      visibleItems.add(y);
     }
+
+    // 2) 시간 내림차순 정렬
+    visibleItems.sort((a, b) => (b.time ?? 0).compareTo(a.time ?? 0));
+
+    // 3) 날짜별 그룹핑
+    final Map<String, List<YoloEvent>> grouped = {};
+    for (final y in visibleItems) {
+      final key = _dateKeyFromEpoch(y.time);
+      grouped.putIfAbsent(key, () => []).add(y);
+    }
+    final sectionKeys = grouped.keys.toList()..sort((a, b) => b.compareTo(a));
+
+    final appBar = AppBar(
+      elevation: 0,
+      backgroundColor: const Color(0xFFF9FBFD),
+      centerTitle: true,
+      title: Text(
+        'SOUND SENSE',
+        style: GoogleFonts.gowunDodum(
+          fontSize: 16,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 1.5,
+          color: const Color(0xFF78B8C4),
+        ),
+      ),
+      iconTheme: const IconThemeData(color: Color(0xFF78B8C4)),
+      bottom: PreferredSize(
+        preferredSize: const Size.fromHeight(1.3),
+        child: Container(
+          color: const Color.fromARGB(255, 151, 198, 206),
+          height: 1.3,
+        ),
+      ),
+      actions: [
+        IconButton(
+          tooltip: '날짜 선택',
+          onPressed: () => _pickDate(context, widget.items),
+          icon: const Icon(Icons.calendar_today_outlined, color: Colors.grey),
+        ),
+        if (_selectedDate != null)
+          IconButton(
+            tooltip: '필터 해제',
+            onPressed: () => setState(() => _selectedDate = null),
+            icon: const Icon(Icons.clear, color: Colors.grey),
+          ),
+      ],
+    );
+
+    if (visibleItems.isEmpty) {
+      return Scaffold(
+        backgroundColor: const Color(0xFFF9FBFD),
+        appBar: appBar,
+        body: const _EmptyState(),
+      );
+    }
+
+    final selectedDateChip = (_selectedDate != null)
+        ? Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Chip(
+                label: Text(
+                  '${_selectedDate!.year}-${_selectedDate!.month.toString().padLeft(2, '0')}-${_selectedDate!.day.toString().padLeft(2, '0')} 선택됨',
+                ),
+                deleteIcon: const Icon(Icons.close),
+                onDeleted: () => setState(() => _selectedDate = null),
+                backgroundColor: const Color(0xFFE8F4F7),
+                side: const BorderSide(color: Color(0xFFB7D7DE)),
+              ),
+            ),
+          )
+        : const SizedBox.shrink();
 
     return Scaffold(
       backgroundColor: const Color(0xFFF9FBFD),
-      appBar: AppBar(
-        elevation: 0,
-        backgroundColor: const Color(0xFFF9FBFD),
-        centerTitle: true,
-        title: Text(
-          'SOUND SENSE',
-          style: GoogleFonts.gowunDodum(
-            fontSize: 16, // 글씨 크기 축소
-            fontWeight: FontWeight.w600,
-            letterSpacing: 1.5,
-            color: const Color(0xFF78B8C4),
-          ),
-        ),
-        iconTheme: const IconThemeData(color: Color(0xFF78B8C4)),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1.3),
-          child: Container(
-            color: const Color.fromARGB(255, 151, 198, 206),
-            height: 1.3,
-          ),
-        ),
-      ),
-      body: visibleItems.isEmpty
-          ? const _EmptyState()
-          : ListView.builder(
+      appBar: appBar,
+      body: Column(
+        children: [
+          selectedDateChip,
+          Expanded(
+            child: ListView.builder(
               padding: const EdgeInsets.all(16),
-              itemCount: visibleItems.length,
-              itemBuilder: (context, i) {
-                final y = visibleItems[i];
+              itemCount: sectionKeys.fold<int>(
+                0,
+                (sum, k) => sum + 1 + grouped[k]!.length,
+              ),
+              itemBuilder: (context, index) {
+                int cursor = 0;
+                for (final key in sectionKeys) {
+                  if (index == cursor) {
+                    return _SectionHeader(title: key);
+                  }
+                  cursor++;
 
-                final rawDisplayImageUrl = _pickDisplayImage(y);
-                final rawLinkUrl = (y.file?.trim().isNotEmpty == true)
-                    ? y.file!.trim()
-                    : rawDisplayImageUrl;
+                  final list = grouped[key]!;
+                  final localIndex = index - cursor;
+                  if (localIndex >= 0 && localIndex < list.length) {
+                    final y = list[localIndex];
 
-                final imageUrl = _normalizeUrl(
-                  rawDisplayImageUrl,
-                )!; // null 아님(1차 필터됨)
-                final linkUrl = _normalizeUrl(rawLinkUrl);
+                    final rawDisplayImageUrl = _pickDisplayImage(y);
+                    final rawLinkUrl = (y.file?.trim().isNotEmpty == true)
+                        ? y.file!.trim()
+                        : rawDisplayImageUrl;
 
-                debugPrint(
-                  '[YOLO] #$i label=${y.label} time=${y.time} '
-                  'file=${y.file} thumb=${y.thumbnail} '
-                  '→ displayImage=$imageUrl | link=$linkUrl',
-                );
+                    final imageUrl = _normalizeUrl(rawDisplayImageUrl)!;
+                    final linkUrl = _normalizeUrl(rawLinkUrl);
 
-                // 2차: 카드 내부에서 실제 이미지 로딩 확인 → 실패면 자체적으로 숨김
-                return _YoloCard(
-                  label: y.label,
-                  bbox: y.bbox,
-                  fileName: _fileNameFromEpoch(y.time),
-                  displayImageUrl: imageUrl,
-                  linkUrl: linkUrl,
-                );
+                    debugPrint(
+                      '[YOLO] $key label=${y.label} time=${y.time} '
+                      'file=${y.file} thumb=${y.thumbnail} → display=$imageUrl | link=$linkUrl',
+                    );
+
+                    return YoloCard(
+                      imageUrl: imageUrl,
+                      linkUrl: linkUrl, // 버튼/탭 타깃
+                      fileName: _fileNameFromEpoch(y.time),
+                    );
+                  }
+                  cursor += list.length;
+                }
+                return const SizedBox.shrink();
               },
             ),
-    );
-  }
-}
-
-/// 실제 이미지 로딩에 성공한 경우에만 자신을 렌더링하는 카드
-class _YoloCard extends StatefulWidget {
-  const _YoloCard({
-    required this.label,
-    required this.bbox,
-    required this.fileName,
-    required this.displayImageUrl,
-    required this.linkUrl,
-  });
-
-  final String label;
-  final List<num> bbox;
-  final String? fileName;
-  final String displayImageUrl; // ← non-null
-  final String? linkUrl;
-
-  @override
-  State<_YoloCard> createState() => _YoloCardState();
-}
-
-class _YoloCardState extends State<_YoloCard> {
-  bool _imageOk = false;
-  ImageStream? _stream;
-  ImageStreamListener? _listener;
-  bool _timedOut = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _probeImage(widget.displayImageUrl);
-  }
-
-  @override
-  void didUpdateWidget(covariant _YoloCard oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.displayImageUrl != widget.displayImageUrl) {
-      _disposeStream();
-      _imageOk = false;
-      _timedOut = false;
-      _probeImage(widget.displayImageUrl);
-    }
-  }
-
-  void _probeImage(String url) {
-    // 3초 타임아웃(네트워크 정지 등)
-    Future.delayed(const Duration(seconds: 3), () {
-      if (!mounted || _imageOk) return;
-      setState(() => _timedOut = true);
-    });
-
-    final provider = NetworkImage(url);
-    final stream = provider.resolve(const ImageConfiguration());
-    _listener = ImageStreamListener(
-      (ImageInfo _, bool __) {
-        if (!mounted) return;
-        setState(() => _imageOk = true);
-      },
-      onError: (dynamic _, StackTrace? __) {
-        if (!mounted) return;
-        setState(() => _imageOk = false);
-      },
-    );
-    stream.addListener(_listener!);
-    _stream = stream;
-  }
-
-  void _disposeStream() {
-    if (_listener != null && _stream != null) {
-      _stream!.removeListener(_listener!);
-    }
-    _listener = null;
-    _stream = null;
-  }
-
-  @override
-  void dispose() {
-    _disposeStream();
-    super.dispose();
-  }
-
-  Future<void> _openExternal(BuildContext context) async {
-    final target = widget.linkUrl;
-    if (target == null || target.trim().isEmpty) return;
-    final ok = await launchUrl(
-      Uri.parse(target),
-      mode: LaunchMode.externalApplication,
-    );
-    if (!ok && context.mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('링크를 열 수 없어요.')));
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    // 이미지 실패/타임아웃이면 카드 자체를 숨김
-    if (!_imageOk) {
-      // 타임아웃 되었거나 에러가 확정된 경우만 숨김.
-      // 로딩 중이면 공간 차지 안 하도록 shrink.
-      return const SizedBox.shrink();
-    }
-
-    final hasLink =
-        widget.linkUrl != null &&
-        widget.linkUrl!.trim().isNotEmpty &&
-        (Uri.tryParse(widget.linkUrl!)?.hasScheme ?? false);
-
-    return Card(
-      elevation: 4,
-      color: Colors.white,
-      surfaceTintColor: Colors.transparent,
-      margin: const EdgeInsets.only(top: 24, bottom: 16),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            if (widget.fileName != null) ...[
-              InkWell(
-                onTap: hasLink ? () => _openExternal(context) : null,
-                child: Text(
-                  widget.fileName!,
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: hasLink ? const Color(0xFF5AAFC0) : Colors.grey,
-                    decoration: hasLink
-                        ? TextDecoration.underline
-                        : TextDecoration.none,
-                    decorationColor: hasLink
-                        ? const Color(0xFF5AAFC0)
-                        : Colors.transparent,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 10),
-            ],
-
-            // 실제 이미지
-            GestureDetector(
-              onTap: hasLink ? () => _openExternal(context) : null,
-              child: Container(
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE6F5F9),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                padding: const EdgeInsets.all(10),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: AspectRatio(
-                    aspectRatio: 1,
-                    child: Image.network(
-                      widget.displayImageUrl,
-                      fit: BoxFit.cover,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 14),
-
-            Text(
-              _koreanizeLabel(widget.label),
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 6),
-
-            if (widget.bbox.isNotEmpty)
-              Wrap(
-                alignment: WrapAlignment.center,
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  Chip(
-                    label: Text(
-                      'bbox ${widget.bbox.map((e) => e.toStringAsFixed(0)).toList()}',
-                    ),
-                    backgroundColor: const Color.fromARGB(255, 182, 208, 213),
-                    side: const BorderSide(color: Color(0xFFE0EEF5)),
-                  ),
-                ],
-              ),
-
-            if (hasLink) ...[
-              const SizedBox(height: 8),
-              TextButton.icon(
-                onPressed: () => _openExternal(context),
-                icon: const Icon(Icons.open_in_new),
-                label: const Text('다운로드 하기'),
-              ),
-            ],
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
+}
 
-  String _koreanizeLabel(String l) {
-    final s = l.toLowerCase();
-    if (s.contains('bus')) return '버스';
-    if (s.contains('car')) return '자동차';
-    if (s.contains('person')) return '사람';
-    if (s.contains('bicycle')) return '자전거';
-    if (s.contains('truck')) return '트럭';
-    return l;
+class _SectionHeader extends StatelessWidget {
+  const _SectionHeader({required this.title});
+  final String title;
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 8, bottom: 6),
+      child: Text(
+        title, // 예: 2025-09-24
+        style: const TextStyle(
+          fontSize: 15,
+          fontWeight: FontWeight.w700,
+          color: Color(0xFF78B8C4),
+        ),
+      ),
+    );
   }
 }
 
 class _EmptyState extends StatelessWidget {
   const _EmptyState();
-
   @override
   Widget build(BuildContext context) {
     return const Center(
