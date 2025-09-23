@@ -71,7 +71,9 @@ class WsClient {
       } else {
         onEvent?.call(UnknownEvent({'raw': obj}));
       }
-    } catch (_) {}
+    } catch (e, st) {
+      debugPrint('[WS][onMessage][ERROR] $e\n$st\n[data]=$data');
+    }
   }
 
   /// JSON 전송

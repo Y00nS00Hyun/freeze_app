@@ -16,7 +16,9 @@ class YamnetCard extends StatelessWidget {
     final normalized = _normalizeLabelAndConf(e.label, e.confidence);
     final label = normalized.$1;
     final conf = normalized.$2;
+    final safeConf = (conf.isFinite) ? conf.clamp(0.0, 1.0) : 0.0;
     final dir = e.direction;
+    final double? dirDeg = (dir is num) ? dir.toDouble() : null;
     final energy = e.energy;
     final ko = _labelKo(label);
     final isNonDanger = _isNonDanger(label);
@@ -63,14 +65,14 @@ class YamnetCard extends StatelessWidget {
 
                   const SizedBox(height: 20),
 
-                  if (dir != null) ...[
+                  if (dirDeg != null) ...[
                     const Text(
                       '방향 정보',
                       style: TextStyle(fontSize: 16, color: Colors.black87),
                     ),
                     const SizedBox(height: 10),
                     Transform.rotate(
-                      angle: ((dir.toDouble()) - 90) * math.pi / 180.0,
+                      angle: (dirDeg - 90) * math.pi / 180.0,
                       child: Container(
                         width: 84,
                         height: 84,
@@ -95,7 +97,9 @@ class YamnetCard extends StatelessWidget {
                     runSpacing: 12,
                     children: [
                       Chip(
-                        label: Text('신뢰도 ${(conf * 100).toStringAsFixed(1)}%'),
+                        label: Text(
+                          '신뢰도 ${(safeConf * 100).toStringAsFixed(1)}%',
+                        ),
                         backgroundColor: const Color(0xFFF3F6F9),
                         side: const BorderSide(color: Color(0xFFE3E8EE)),
                       ),
@@ -181,7 +185,7 @@ class YamnetCard extends StatelessWidget {
     final s = label.toLowerCase();
 
     // 자주 보이는 라벨 추가 매핑
-    if (s.contains('silence')) return '무음(안전)';
+    if (s.contains('silence')) return '무음';
     if (s.contains('rustle')) return '바스락 소리';
     if (s.contains('squish')) return '찌부딪히는 소리';
     if (s.contains('burst') || s.contains('pop')) return '펑/터지는 소리';

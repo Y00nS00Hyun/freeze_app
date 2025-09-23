@@ -19,15 +19,30 @@ abstract class EventBase {
       return YoloEvent.fromJson(j);
     }
 
-    // YAMNet
+    // YAMNet: 키 휴리스틱을 확장
     final hasYamKeys =
         j.containsKey('cat') ||
         j.containsKey('raw') ||
         j.containsKey('danger') ||
         j.containsKey('group') ||
         j.containsKey('dbfs') ||
-        j.containsKey('latency');
+        j.containsKey('latency') ||
+        // 흔한 조합: label + (confidence|conf|score)
+        ((j.containsKey('label') || j.containsKey('name')) &&
+            (j.containsKey('confidence') ||
+                j.containsKey('conf') ||
+                j.containsKey('score'))) ||
+        // 방향/에너지 계열
+        (j.containsKey('direction') ||
+            j.containsKey('dir') ||
+            j.containsKey('energy') ||
+            j.containsKey('rms') ||
+            j.containsKey('db')) ||
+        // 타임스탬프 계열
+        (j.containsKey('ms') || j.containsKey('timestamp'));
+
     if (src == 'yamnet' || ty == 'yamnet' || hasYamKeys) {
+      debugPrint('[EVT][ROUTE] -> YAMNet  keys=${j.keys}');
       return YamnetEvent.fromJson(j);
     }
 
@@ -195,13 +210,29 @@ class YamnetEvent extends EventBase {
     label ??= _headText((j['raw'] ?? j['cat'])?.toString());
 
     // 2) confidence 후보: confidence/conf/score 또는 raw/cat의 괄호값
-    double? conf =
-        _asNumNullable(j['confidence'])?.toDouble() ??
-        _asNumNullable(j['conf'])?.toDouble() ??
-        _asNumNullable(j['score'])?.toDouble() ??
+    double? _numMaybePercent(dynamic v) {
+      if (v == null) return null;
+      if (v is num) return v.toDouble();
+      final s = v.toString().trim();
+      final n = double.tryParse(s.replaceAll('%', ''));
+      if (n == null) return null;
+      // 끝에 % 있으면 0~1 스케일로 바꿔줌
+      return s.endsWith('%') ? n / 100.0 : n;
+    }
+
+    double conf =
+        _numMaybePercent(j['confidence']) ??
+        _numMaybePercent(j['conf']) ??
+        _numMaybePercent(j['score']) ??
         _extractParenScore(j['raw']?.toString()) ??
-        _extractParenScore(j['cat']?.toString());
-    conf ??= 0;
+        _extractParenScore(j['cat']?.toString()) ??
+        0.0;
+
+    // 0~100 값이 들어온 경우 보정
+    if (conf > 1.0) conf = conf / 100.0;
+
+    // 0~1 범위로 클램프
+    conf = conf.clamp(0.0, 1.0);
 
     // 3) 기타 필드
     final dir = _asNumNullable(j['direction'] ?? j['dir']);
