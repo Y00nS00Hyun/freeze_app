@@ -11,6 +11,7 @@ abstract class EventBase {
     final src = (j['source'] ?? '').toString().toLowerCase();
     final ty = (j['type'] ?? j['event'] ?? '').toString().toLowerCase();
 
+    // YOLO
     if (src == 'yolo' ||
         ty == 'yolo' ||
         ty == 'snapshot' ||
@@ -18,6 +19,7 @@ abstract class EventBase {
       return YoloEvent.fromJson(j);
     }
 
+    // YAMNet
     final hasYamKeys =
         j.containsKey('cat') ||
         j.containsKey('raw') ||
@@ -29,16 +31,18 @@ abstract class EventBase {
       return YamnetEvent.fromJson(j);
     }
 
-    if (src == 'clova' || ty == 'clova' || ty == 'stt') {
+    // STT (clova/whisper 공용 처리)
+    if (src == 'clova' ||
+        src == 'whisper' ||
+        ty == 'clova' ||
+        ty == 'stt' ||
+        ty == 'whisper') {
       return ClovaEvent.fromJson(j);
     }
 
-    return UnknownEvent(j);
-
-    if (src == 'clova' || ty == 'clova' || ty == 'stt') {
-      return ClovaEvent.fromJson(j);
-    }
-
+    debugPrint(
+      '[EVT] Unknown route: src="$src", ty="$ty", keys=${j.keys.toList()}',
+    );
     return UnknownEvent(j);
   }
 

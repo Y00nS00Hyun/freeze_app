@@ -1,6 +1,7 @@
 // lib/pages/event_viewer_page.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 
 import '../models/events.dart';
 import '../services/ws_client.dart';
@@ -27,6 +28,15 @@ class _EventViewerPageState extends State<EventViewerPage> {
 
   Timer? _yamHideTimer;
   bool _showYam = true;
+
+  // ───── 팝업 중복 방지/디바운스 필드 ─────
+  bool _isPopupVisible = false;
+  String? _lastPopupKey;
+  DateTime _lastPopupAt = DateTime.fromMillisecondsSinceEpoch(0);
+  static const Duration _popupCooldown = Duration(seconds: 3);
+
+  // ───── YAMNet 신뢰도 하한선(필요 시 조정) ─────
+  static const double _minConfidence = 0.30;
 
   @override
   void initState() {
@@ -74,7 +84,6 @@ class _EventViewerPageState extends State<EventViewerPage> {
   }
 
   // ───────────────── YAMNet ─────────────────
-  // ───────────────── YAMNet ─────────────────
   void _onYamnet(YamnetEvent e) {
     final label = e.label.trim();
     final conf = e.confidence;
@@ -88,13 +97,14 @@ class _EventViewerPageState extends State<EventViewerPage> {
     _yamHideTimer?.cancel();
     if (!isValid) return;
 
-    final danger = e.danger ?? !_isNonDanger(label);
+    // 위험 판정: 서버 danger 플래그 우선, 없으면 라벨 기반 판정 + 신뢰도 하한선
+    final isDanger =
+        (e.danger ?? !_isNonDanger(label)) && conf >= _minConfidence;
 
-    if (danger) {
-      // 팝업 다이얼로그 표시
+    if (isDanger) {
       _showDangerPopup(e);
 
-      // 5초 뒤 카드 자동 숨김
+      // 5초 뒤 카드 자동 숨김(동일 이벤트일 때만)
       final captured = e.ms;
       _yamHideTimer = Timer(const Duration(seconds: 5), () {
         if (!mounted) return;
@@ -103,26 +113,48 @@ class _EventViewerPageState extends State<EventViewerPage> {
     }
   }
 
+  // 팝업 표시: 중복 방지 + 쿨다운 + 다음 프레임에서 안전 호출
   void _showDangerPopup(YamnetEvent e) {
     if (!mounted) return;
-    showDialog(
-      context: context,
-      barrierDismissible: true,
-      builder: (ctx) => AlertDialog(
-        title: const Text('⚠️ 비상 상황 감지', style: TextStyle(color: Colors.red)),
-        content: Text(
-          '라벨: ${e.label}\n'
-          '신뢰도: ${(e.confidence * 100).toStringAsFixed(1)}%\n'
-          '시간: ${e.ms}',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('확인'),
+
+    final key = '${e.ms ?? 0}:${e.label.toLowerCase()}';
+    final now = DateTime.now();
+
+    // 이미 떠 있거나, 동일 이벤트가 쿨다운 내 재도착 시 무시
+    if (_isPopupVisible) return;
+    if (_lastPopupKey == key && now.difference(_lastPopupAt) < _popupCooldown) {
+      return;
+    }
+
+    _lastPopupKey = key;
+    _lastPopupAt = now;
+
+    // 다음 프레임에서 다이얼로그 호출(네비게이션 직후 호출 안전)
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _isPopupVisible) return;
+
+      _isPopupVisible = true;
+      showDialog(
+        context: context,
+        barrierDismissible: true,
+        builder: (ctx) => AlertDialog(
+          title: const Text('⚠️ 비상 상황 감지', style: TextStyle(color: Colors.red)),
+          content: Text(
+            '라벨: ${e.label}\n'
+            '신뢰도: ${(e.confidence * 100).toStringAsFixed(1)}%\n'
+            '시간: ${e.ms}',
           ),
-        ],
-      ),
-    );
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('확인'),
+            ),
+          ],
+        ),
+      ).whenComplete(() {
+        _isPopupVisible = false;
+      });
+    });
   }
 
   bool _isNonDanger(String label) {
@@ -147,13 +179,12 @@ class _EventViewerPageState extends State<EventViewerPage> {
   void _onYolo(YoloEvent e) {
     final ty = e.event.toLowerCase();
     if (ty == 'yolo_recording_done') return;
+
     final key = (e.file?.trim().isNotEmpty == true)
         ? e.file!.trim()
         : '${e.time ?? 0}:${e.label}'.toLowerCase();
 
-    if (_yoloKeys.contains(key)) {
-      return;
-    }
+    if (_yoloKeys.contains(key)) return;
     _yoloKeys.add(key);
 
     _yolos.insert(0, e);
@@ -210,9 +241,12 @@ class _EventViewerPageState extends State<EventViewerPage> {
             icon: const Icon(Icons.photo_camera_outlined, color: Colors.grey),
           ),
         ],
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1.5),
-          child: Container(color: const Color(0xFF78B8C4), height: 1.5),
+        bottom: const PreferredSize(
+          preferredSize: Size.fromHeight(1.5),
+          child: ColoredBox(
+            color: Color(0xFF78B8C4),
+            child: SizedBox(height: 1.5),
+          ),
         ),
       ),
       body: SafeArea(
@@ -223,7 +257,6 @@ class _EventViewerPageState extends State<EventViewerPage> {
               padding: const EdgeInsets.only(bottom: 10),
               child: Text(_conn, style: const TextStyle(color: Colors.grey)),
             ),
-
             // YAMNet 카드 (위험이면 5초 후 자동 숨김)
             Expanded(
               child: Center(
@@ -240,9 +273,7 @@ class _EventViewerPageState extends State<EventViewerPage> {
                 ),
               ),
             ),
-
             const SizedBox(height: 8),
-
             // CLOVA 텍스트 영역
             SizedBox(height: 370, child: ClovaPanel(event: _clova)),
           ],
