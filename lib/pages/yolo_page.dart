@@ -350,7 +350,7 @@ class _YoloCardState extends State<_YoloCard> {
                     label: Text(
                       'bbox ${widget.bbox.map((e) => e.toStringAsFixed(0)).toList()}',
                     ),
-                    backgroundColor: const Color(0xFFF7FBFF),
+                    backgroundColor: const Color.fromARGB(255, 182, 208, 213),
                     side: const BorderSide(color: Color(0xFFE0EEF5)),
                   ),
                 ],
@@ -361,7 +361,7 @@ class _YoloCardState extends State<_YoloCard> {
               TextButton.icon(
                 onPressed: () => _openExternal(context),
                 icon: const Icon(Icons.open_in_new),
-                label: const Text('링크로 열기'),
+                label: const Text('다운로드 하기'),
               ),
             ],
           ],
@@ -392,7 +392,7 @@ class _EmptyState extends StatelessWidget {
         children: [
           Icon(Icons.photo_camera_back_outlined, size: 56, color: Colors.grey),
           SizedBox(height: 10),
-          Text('현재 등록된 사진이 없습니다.', style: TextStyle(color: Colors.grey)),
+          Text('현재 등록된 사진이 없습니다', style: TextStyle(color: Colors.grey)),
         ],
       ),
     );
