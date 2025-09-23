@@ -74,6 +74,7 @@ class _EventViewerPageState extends State<EventViewerPage> {
   }
 
   // ───────────────── YAMNet ─────────────────
+  // ───────────────── YAMNet ─────────────────
   void _onYamnet(YamnetEvent e) {
     final label = e.label.trim();
     final conf = e.confidence;
@@ -88,13 +89,40 @@ class _EventViewerPageState extends State<EventViewerPage> {
     if (!isValid) return;
 
     final danger = e.danger ?? !_isNonDanger(label);
+
     if (danger) {
+      // 팝업 다이얼로그 표시
+      _showDangerPopup(e);
+
+      // 5초 뒤 카드 자동 숨김
       final captured = e.ms;
       _yamHideTimer = Timer(const Duration(seconds: 5), () {
         if (!mounted) return;
         if (_yam?.ms == captured) setState(() => _showYam = false);
       });
     }
+  }
+
+  void _showDangerPopup(YamnetEvent e) {
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => AlertDialog(
+        title: const Text('⚠️ 비상 상황 감지', style: TextStyle(color: Colors.red)),
+        content: Text(
+          '라벨: ${e.label}\n'
+          '신뢰도: ${(e.confidence * 100).toStringAsFixed(1)}%\n'
+          '시간: ${e.ms}',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('확인'),
+          ),
+        ],
+      ),
+    );
   }
 
   bool _isNonDanger(String label) {
