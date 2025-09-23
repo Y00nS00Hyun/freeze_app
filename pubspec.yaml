@@ -1,6 +1,6 @@
 name: freeze_app
 description: "A new Flutter project."
-publish_to: 'none'  # Remove this line if you wish to publish to pub.dev
+publish_to: 'none'
 
 version: 1.0.0+1
 
@@ -8,8 +8,6 @@ environment:
   sdk: ^3.8.1
 
 dependencies:
-  web: ^2.0.0
-  js: ^0.6.3
   flutter:
     sdk: flutter
   web_socket_channel: ^3.0.3
@@ -18,7 +16,7 @@ dependencies:
   cupertino_icons: ^1.0.8
 
 dev_dependencies:
-  flutter_lints: ^6.0.0  # Keep this version
+  flutter_lints: ^6.0.0
   flutter_test:
     sdk: flutter
 

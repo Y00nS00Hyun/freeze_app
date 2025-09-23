@@ -4,11 +4,12 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
-import 'package:web_socket_channel/io.dart' as io_ws;
-import 'package:web_socket_channel/html.dart' as html_ws;
 import 'package:web_socket_channel/status.dart' as ws_status;
 
 import '../models/events.dart';
+
+// ★ 조건부 import: 모바일은 io, 웹은 web 파일을 가져옴
+import 'ws_connector_io.dart' if (dart.library.html) 'ws_connector_web.dart';
 
 typedef EventHandler = void Function(EventBase evt);
 typedef StateHandler = void Function(String state);
@@ -30,12 +31,8 @@ class WsClient {
     try {
       final uri = Uri.parse(endpoint);
 
-      _ch = kIsWeb
-          ? html_ws.HtmlWebSocketChannel.connect(uri.toString())
-          : io_ws.IOWebSocketChannel.connect(
-              uri,
-              pingInterval: const Duration(seconds: 15),
-            );
+      // ★ 플랫폼별 커넥터 사용 (kIsWeb 분기 불필요)
+      _ch = platformConnectWs(uri);
 
       _sub = _ch!.stream.listen(
         _onMessage,
@@ -74,7 +71,7 @@ class WsClient {
       } else {
         onEvent?.call(UnknownEvent({'raw': obj}));
       }
-    } catch (e) {}
+    } catch (_) {}
   }
 
   /// JSON 전송

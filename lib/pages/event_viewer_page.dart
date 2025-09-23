@@ -115,9 +115,8 @@ class _EventViewerPageState extends State<EventViewerPage> {
     return isSpeechLike || isSafe;
   }
 
-  // ───────────────── YOLO (중복 방지) ─────────────────
+  // ───────────────── YOLO ─────────────────
   void _onYolo(YoloEvent e) {
-    // (선택) 완료알림 같은 메타 이벤트는 걸러내기
     final ty = e.event.toLowerCase();
     if (ty == 'yolo_recording_done') return;
     final key = (e.file?.trim().isNotEmpty == true)
