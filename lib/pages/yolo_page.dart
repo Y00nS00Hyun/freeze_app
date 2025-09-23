@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:google_fonts/google_fonts.dart';
 import '../models/events.dart';
 
 class YoloPage extends StatelessWidget {
@@ -66,11 +67,7 @@ class YoloPage extends StatelessWidget {
         RegExp(r'\.mp4$', caseSensitive: false),
         '.jpg',
       );
-      // 필요 시 프로젝트 규칙이 /clips → /snapshots 이면 아래로 교체
-      // final b = file
-      //     .replaceFirst('/clips/', '/snapshots/')
-      //     .replaceFirst(RegExp(r'\.mp4$', caseSensitive: false), '.jpg');
-      return a; // 또는 b
+      return a;
     }
 
     final name = _fileNameFromEpoch(y.time);
@@ -81,7 +78,6 @@ class YoloPage extends StatelessWidget {
     return null;
   }
 
-  // epoch(초) -> "YYYY_MM_DD_HHMMSS.jpg"
   String? _fileNameFromEpoch(int? sec) {
     if (sec == null) {
       debugPrint('[YOLO] time is null → fileName 생성 불가');
@@ -112,18 +108,22 @@ class YoloPage extends StatelessWidget {
         elevation: 0,
         backgroundColor: const Color(0xFFF9FBFD),
         centerTitle: true,
-        title: const Text(
+        title: Text(
           'SOUND SENSE',
-          style: TextStyle(
-            color: Color(0xFF78B8C4),
-            letterSpacing: 2,
+          style: GoogleFonts.gowunDodum(
+            fontSize: 16, // 글씨 크기 축소
             fontWeight: FontWeight.w600,
+            letterSpacing: 1.5,
+            color: const Color(0xFF78B8C4),
           ),
         ),
         iconTheme: const IconThemeData(color: Color(0xFF78B8C4)),
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1.5),
-          child: Container(color: const Color(0xFF78B8C4), height: 1.5),
+          preferredSize: const Size.fromHeight(1.3),
+          child: Container(
+            color: const Color.fromARGB(255, 151, 198, 206),
+            height: 1.3,
+          ),
         ),
       ),
       body: visibleItems.isEmpty

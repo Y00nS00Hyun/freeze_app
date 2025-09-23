@@ -2,7 +2,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
-
+import 'package:google_fonts/google_fonts.dart';
 import '../models/events.dart';
 import '../services/ws_client.dart';
 import '../widgets/yamnet_card.dart';
@@ -85,26 +85,33 @@ class _EventViewerPageState extends State<EventViewerPage> {
 
   // ───────────────── YAMNet ─────────────────
   void _onYamnet(YamnetEvent e) {
-    final label = e.label.trim();
+    final label = e.label.trim().isEmpty ? 'Unknown' : e.label.trim();
     final conf = e.confidence;
-    final isValid = label.isNotEmpty && conf > 0;
 
     setState(() {
-      _yam = e;
+      _yam = YamnetEvent(
+        event: e.event,
+        source: e.source,
+        label: label,
+        confidence: conf,
+        direction: e.direction,
+        energy: e.energy,
+        ms: e.ms,
+        danger: e.danger,
+        group: e.group,
+        dbfs: e.dbfs,
+        latencySec: e.latencySec,
+      );
       _showYam = true;
     });
 
     _yamHideTimer?.cancel();
-    if (!isValid) return;
 
-    // 위험 판정: 서버 danger 플래그 우선, 없으면 라벨 기반 판정 + 신뢰도 하한선
+    // 팝업은 조건부(카드는 항상 표시)
     final isDanger =
         (e.danger ?? !_isNonDanger(label)) && conf >= _minConfidence;
-
     if (isDanger) {
       _showDangerPopup(e);
-
-      // 5초 뒤 카드 자동 숨김(동일 이벤트일 때만)
       final captured = e.ms;
       _yamHideTimer = Timer(const Duration(seconds: 5), () {
         if (!mounted) return;
@@ -226,14 +233,23 @@ class _EventViewerPageState extends State<EventViewerPage> {
         elevation: 0,
         backgroundColor: const Color(0xFFF9FBFD),
         centerTitle: true,
-        title: const Text(
-          'SOUND SENSE',
-          style: TextStyle(
-            color: Color(0xFF78B8C4),
-            letterSpacing: 2,
-            fontWeight: FontWeight.w600,
+        shape: const Border(
+          // ★ 밑줄
+          bottom: BorderSide(
+            color: Color.fromARGB(255, 151, 198, 206),
+            width: 1.3,
           ),
         ),
+        title: Text(
+          'SOUND SENSE',
+          style: GoogleFonts.gowunDodum(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 1.5,
+            color: const Color(0xFF78B8C4),
+          ),
+        ),
+        iconTheme: const IconThemeData(color: Color(0xFF78B8C4)),
         actions: [
           IconButton(
             tooltip: 'YOLO 결과 보기',
@@ -241,14 +257,8 @@ class _EventViewerPageState extends State<EventViewerPage> {
             icon: const Icon(Icons.photo_camera_outlined, color: Colors.grey),
           ),
         ],
-        bottom: const PreferredSize(
-          preferredSize: Size.fromHeight(1.5),
-          child: ColoredBox(
-            color: Color(0xFF78B8C4),
-            child: SizedBox(height: 1.5),
-          ),
-        ),
       ),
+
       body: SafeArea(
         child: Column(
           children: [
@@ -275,7 +285,7 @@ class _EventViewerPageState extends State<EventViewerPage> {
             ),
             const SizedBox(height: 8),
             // CLOVA 텍스트 영역
-            SizedBox(height: 370, child: ClovaPanel(event: _clova)),
+            SizedBox(height: 330, child: ClovaPanel(event: _clova)),
           ],
         ),
       ),
