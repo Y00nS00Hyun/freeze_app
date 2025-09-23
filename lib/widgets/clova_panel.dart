@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../models/events.dart';
 
 class ClovaPanel extends StatelessWidget {
@@ -7,7 +8,7 @@ class ClovaPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final header = event == null ? 'CLOVA 인식 중...' : 'CLOVA 인식 결과';
+    final header = event == null ? '인식 중...' : '인식 결과';
     final text = event?.text ?? '...';
 
     return Padding(
@@ -16,15 +17,16 @@ class ClovaPanel extends StatelessWidget {
         width: double.infinity,
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
-          color: const Color(0xFFDFF3F8),
+          color: const Color.fromARGB(255, 210, 229, 234),
           borderRadius: BorderRadius.circular(20),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // 헤더 글씨체 적용
             Text(
               header,
-              style: TextStyle(
+              style: GoogleFonts.gowunDodum(
                 color: Colors.white.withOpacity(0.9),
                 fontWeight: FontWeight.w700,
                 fontSize: 18,
@@ -38,8 +40,9 @@ class ClovaPanel extends StatelessWidget {
               child: SingleChildScrollView(
                 child: Text(
                   text,
-                  style: const TextStyle(
-                    color: Color(0xFF4A4A4A),
+                  // 본문 글씨체 적용
+                  style: GoogleFonts.gowunDodum(
+                    color: const Color(0xFF4A4A4A),
                     fontSize: 22,
                     height: 1.4,
                     fontWeight: FontWeight.w500,

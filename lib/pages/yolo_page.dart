@@ -93,9 +93,14 @@ class YoloPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 1차: 썸네일 URL 생성 성공 & 스킴 존재하는 것만 남김
     final visibleItems = <YoloEvent>[];
     for (final y in items) {
+      // ★ label 유효성 체크(비어있거나 "null"은 스킵)
+      final rawLabel = y.label.trim();
+      if (rawLabel.isEmpty || rawLabel.toLowerCase() == 'null') {
+        continue;
+      }
+
       final raw = _pickDisplayImage(y);
       final url = _normalizeUrl(raw);
       final ok = url != null && (Uri.tryParse(url)?.hasScheme ?? false);
@@ -387,7 +392,7 @@ class _EmptyState extends StatelessWidget {
         children: [
           Icon(Icons.photo_camera_back_outlined, size: 56, color: Colors.grey),
           SizedBox(height: 10),
-          Text('표시할 썸네일이 없습니다.', style: TextStyle(color: Colors.grey)),
+          Text('현재 등록된 사진이 없습니다.', style: TextStyle(color: Colors.grey)),
         ],
       ),
     );
