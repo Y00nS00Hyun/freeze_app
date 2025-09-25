@@ -29,7 +29,7 @@ class ClovaPanel extends StatelessWidget {
               style: GoogleFonts.gowunDodum(
                 color: Colors.white.withOpacity(0.9),
                 fontWeight: FontWeight.w700,
-                fontSize: 18,
+                fontSize: 35,
                 shadows: const [
                   Shadow(color: Colors.black26, offset: Offset(0, 1)),
                 ],
@@ -41,8 +41,8 @@ class ClovaPanel extends StatelessWidget {
                 child: Text(
                   text,
                   style: GoogleFonts.gowunDodum(
-                    color: const Color(0xFF4A4A4A), // 필요하면 빨강으로 바꿔도 OK
-                    fontSize: 22,
+                    color: const Color(0xFF4A4A4A),
+                    fontSize: 45,
                     height: 1.4,
                     fontWeight: FontWeight.w500,
                   ),
