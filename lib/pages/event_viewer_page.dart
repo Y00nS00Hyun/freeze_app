@@ -19,14 +19,14 @@ class EventViewerPage extends StatefulWidget {
 class _EventViewerPageState extends State<EventViewerPage> {
   late final WsClient _ws;
 
-  YamnetEvent? _yam;
+  YamnetEvent? _yam; // 실시간 최신 이벤트
+  YamnetEvent? _holdYam; // 🔒 위험 홀드용 버퍼
   ClovaEvent? _clova;
   final List<YoloEvent> _yolos = [];
   final Set<String> _yoloKeys = {};
   String _conn = '연결 준비...';
 
   Timer? _yamHideTimer;
-  bool _showYam = true;
 
   // 알림 스팸 방지
   String? _lastNotiKey;
@@ -35,10 +35,13 @@ class _EventViewerPageState extends State<EventViewerPage> {
 
   // 위험 화면 최소 유지(고정) 시간
   DateTime? _dangerHoldUntil;
-  static const Duration _dangerHold = Duration(seconds: 5);
+  static const Duration _dangerHold = Duration(seconds: 7);
 
   // YAMNet 신뢰도 하한선
   static const double _minConfidence = 0.30;
+
+  bool get _isHolding =>
+      _dangerHoldUntil != null && DateTime.now().isBefore(_dangerHoldUntil!);
 
   @override
   void initState() {
@@ -88,41 +91,41 @@ class _EventViewerPageState extends State<EventViewerPage> {
     final isDanger =
         (e.danger ?? !_isNonDanger(label)) && conf >= _minConfidence;
 
-    // 홀드 중에는 안전 업데이트 무시
-    if (_dangerHoldUntil != null &&
-        DateTime.now().isBefore(_dangerHoldUntil!)) {
+    if (_isHolding) {
+      // 🔒 홀드 중엔 '안전' 업데이트는 무시 → 화면 유지
       if (!isDanger) return;
     }
 
-    setState(() {
-      _yam = YamnetEvent(
-        event: e.event,
-        source: e.source,
-        label: label,
-        confidence: conf,
-        direction: e.direction,
-        energy: e.energy,
-        ms: e.ms,
-        danger: e.danger,
-        group: e.group,
-        dbfs: e.dbfs,
-        latencySec: e.latencySec,
-      );
-      _showYam = true;
-    });
-
-    _yamHideTimer?.cancel();
+    // 최신 이벤트는 항상 갱신(로그/통계용)
+    _yam = YamnetEvent(
+      event: e.event,
+      source: e.source,
+      label: label,
+      confidence: conf,
+      direction: e.direction,
+      energy: e.energy,
+      ms: e.ms,
+      danger: e.danger,
+      group: e.group,
+      dbfs: e.dbfs,
+      latencySec: e.latencySec,
+    );
 
     if (isDanger) {
+      // 🔒 위험 감지 시: 홀드 버퍼에 저장 + 5초 연장
+      _holdYam = _yam;
       _dangerHoldUntil = DateTime.now().add(_dangerHold);
 
+      _yamHideTimer?.cancel();
       _yamHideTimer = Timer(_dangerHold, () {
         if (!mounted) return;
+        // 홀드 해제만; 화면은 다음 업데이트 때 자연스레 바뀜
         _dangerHoldUntil = null;
-        // 필요하면 자동 숨김:
-        // setState(() => _showYam = false);
+        // 원하면 자동 숨김도 가능:
+        // setState(() => _holdYam = null);
       });
 
+      // 알림(쿨다운)
       final key = '${e.ms ?? 0}:${label.toLowerCase()}';
       final now = DateTime.now();
       if (!(_lastNotiKey == key &&
@@ -133,6 +136,8 @@ class _EventViewerPageState extends State<EventViewerPage> {
         NotiService.I.showDanger('⚠️ 비상 상황 감지', '$label · 신뢰도 $percent%');
       }
     }
+
+    setState(() {});
   }
 
   bool _isNonDanger(String label) {
@@ -200,7 +205,10 @@ class _EventViewerPageState extends State<EventViewerPage> {
   Widget build(BuildContext context) {
     // 화면 크기에 맞춰 YAM 카드 영역 높이 동적 계산 (잘림 방지)
     final h = MediaQuery.of(context).size.height;
-    final yamHeight = (h * 0.50).clamp(380.0, 560.0); // 50%를 기본, 최소/최대 제한
+    final yamHeight = (h * 0.50).clamp(380.0, 560.0);
+
+    // 🔒 홀드 중이면 _holdYam 표출, 아니면 최신 _yam
+    final displayed = _isHolding ? _holdYam : _yam;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF9FBFD),
@@ -242,11 +250,11 @@ class _EventViewerPageState extends State<EventViewerPage> {
               height: yamHeight,
               child: Center(
                 child: AnimatedOpacity(
-                  opacity: (_showYam && _yam != null) ? 1.0 : 0.0,
+                  opacity: (displayed != null) ? 1.0 : 0.0,
                   duration: const Duration(milliseconds: 180),
                   child: SingleChildScrollView(
                     physics: const BouncingScrollPhysics(),
-                    child: YamnetCard(event: _yam),
+                    child: YamnetCard(event: displayed),
                   ),
                 ),
               ),

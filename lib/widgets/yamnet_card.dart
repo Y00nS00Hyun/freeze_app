@@ -1,37 +1,164 @@
 // lib/widgets/yamnet_card.dart
+import 'dart:async'; // ⬅️ 추가
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../models/events.dart';
 
-class YamnetCard extends StatelessWidget {
+/// YAMNet 이벤트 표시 카드
+class YamnetCard extends StatefulWidget {
+  // ⬅️ StatefulWidget로 변경
   const YamnetCard({super.key, this.event});
-
   final YamnetEvent? event;
+
+  // ─────────────────────────────────────────────
+  // 서버 카테고리 키워드(소문자 비교)
+  static const List<String> _KW_HORN = <String>[
+    'car horn',
+    'vehicle horn',
+    'air horn',
+    'horn',
+    'honk',
+    'honking',
+    'klaxon',
+  ];
+  static const List<String> _KW_FIRE_ALARM = <String>[
+    'fire alarm',
+    'smoke alarm',
+    'carbon monoxide alarm',
+    'co alarm',
+    'evacuation alarm',
+    'emergency alarm',
+    'alarm bell',
+    'fire bell',
+    'fire engine siren',
+    'fire truck siren',
+    'fire siren',
+    'siren',
+    'warning siren',
+  ];
+  static bool _containsAny(String s, List<String> kws) {
+    for (final kw in kws) {
+      if (s.contains(kw)) return true;
+    }
+    return false;
+  }
+
+  // 라벨/신뢰도 정규화
+  static (String, double) _normalizeLabelAndConf(
+    String rawLabel,
+    double rawConf,
+  ) {
+    final s = rawLabel.trim();
+    if (s.startsWith('{') && s.contains('label:')) {
+      String label = rawLabel;
+      double conf = rawConf;
+      for (final part in s.substring(1, s.length - 1).split(',')) {
+        final kv = part.split(':');
+        if (kv.length >= 2) {
+          final key = kv[0].trim();
+          final val = kv.sublist(1).join(':').trim();
+          if (key == 'label') label = val;
+          if (key == 'conf') conf = double.tryParse(val) ?? conf;
+        }
+      }
+      return (label, conf);
+    }
+    return (rawLabel, rawConf);
+  }
+
+  // 화면에 보여줄 한국어 라벨 매핑 (단순화 버전)
+  static String _labelKo(String label) {
+    final s = label.trim().toLowerCase();
+    if (s == 'safe') return '안전';
+    if (s == '사이렌') return '사이렌';
+    if (s == '경적소리') return '경적소리';
+    return label.isEmpty ? '대기 중' : label;
+  }
+
+  // safe만 비위험
+  static bool _isNonDanger(String label) {
+    final s = label.trim().toLowerCase();
+    return s == 'safe';
+  }
+
+  // 사이렌/경적소리면 지연 대상
+  static bool _shouldDelay(String label) {
+    final s = label.trim().toLowerCase();
+    return s == '사이렌' || s == '경적소리';
+  }
+
+  @override
+  State<YamnetCard> createState() => _YamnetCardState();
+}
+
+class _YamnetCardState extends State<YamnetCard> {
+  Timer? _delayTimer;
+  bool _delayActive = false; // 지연 중인지
+
+  void _setupDelay() {
+    _delayTimer?.cancel();
+    final e = widget.event;
+    if (e == null) {
+      setState(() => _delayActive = false);
+      return;
+    }
+    final normalized = YamnetCard._normalizeLabelAndConf(e.label, e.confidence);
+    final label = normalized.$1;
+
+    if (YamnetCard._shouldDelay(label)) {
+      // 사이렌/경적소리면 7초 지연
+      setState(() => _delayActive = true);
+      _delayTimer = Timer(const Duration(seconds: 7), () {
+        if (mounted) setState(() => _delayActive = false);
+      });
+    } else {
+      setState(() => _delayActive = false);
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _setupDelay();
+  }
+
+  @override
+  void didUpdateWidget(covariant YamnetCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 새 이벤트가 오면 라벨 기준으로 지연 상태 갱신
+    if (oldWidget.event?.label != widget.event?.label) {
+      _setupDelay();
+    }
+  }
+
+  @override
+  void dispose() {
+    _delayTimer?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    if (event == null) return const SizedBox.shrink();
-    final e = event!;
-    final normalized = _normalizeLabelAndConf(e.label, e.confidence);
+    if (widget.event == null) return const SizedBox.shrink();
+    final e = widget.event!;
+
+    // 라벨/신뢰도 정규화
+    final normalized = YamnetCard._normalizeLabelAndConf(e.label, e.confidence);
     final label = normalized.$1;
     final conf = normalized.$2;
     final safeConf = (conf.isFinite) ? conf.clamp(0.0, 1.0) : 0.0;
 
+    // 방향 파싱
     double? _parseDirection(dynamic dir) {
       if (dir == null) return null;
-
-      // 숫자면: 2π보다 작으면 라디안으로 보고 도(°)로 변환
       if (dir is num) {
         final v = dir.toDouble();
         final isRad = v.abs() <= 2 * math.pi + 1e-6;
-        return isRad ? (v * 180.0 / math.pi) : v; // rad→deg, deg는 그대로
+        return isRad ? (v * 180.0 / math.pi) : v;
       }
-
       if (dir is String) {
-        // "123", "123°", "1.57 rad" 등
         final direct = double.tryParse(dir);
-        if (direct != null) return direct; // 단위 없는 문자열은 '도'로 간주
-
+        if (direct != null) return direct;
         final m = RegExp(
           r'(-?\d+(?:\.\d+)?)\s*(deg|°|rad)?',
           caseSensitive: false,
@@ -39,8 +166,7 @@ class YamnetCard extends StatelessWidget {
         if (m != null) {
           final v = double.parse(m.group(1)!);
           final unit = (m.group(2) ?? 'deg').toLowerCase();
-          if (unit.contains('rad')) return v * 180.0 / math.pi;
-          return v; // deg/° 또는 단위 없음
+          return unit.contains('rad') ? (v * 180.0 / math.pi) : v;
         }
       }
       return null;
@@ -49,21 +175,26 @@ class YamnetCard extends StatelessWidget {
     final double? rawDirDeg = _parseDirection(e.direction);
     final double? dirDeg = (rawDirDeg == null || !rawDirDeg.isFinite)
         ? null
-        : ((rawDirDeg % 360) + 360) % 360; // 0~360으로 정규화
+        : ((rawDirDeg % 360) + 360) % 360;
 
     final energy = e.energy;
-    final ko = _labelKo(label);
-    final isNonDanger = _isNonDanger(label);
+    final ko = YamnetCard._labelKo(label);
+    final isNonDanger = YamnetCard._isNonDanger(label);
     final isDanger = e.danger ?? !isNonDanger;
-    final titleColor = isDanger ? Colors.redAccent : const Color(0xFF3BB273);
 
-    final Widget mainSymbol = isDanger
-        ? Text(
-            _emojiForDanger(label),
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 72),
+    // ⬇️ 지연 중에는 '위험' 대신 '안전(확인 중)'으로 표시
+    final effectiveIsDanger = _delayActive ? false : isDanger;
+    final titleColor = effectiveIsDanger
+        ? Colors.redAccent
+        : const Color(0xFF3BB273);
+
+    final Widget mainSymbol = effectiveIsDanger
+        ? const Icon(
+            Icons.warning_amber_rounded,
+            color: Color.fromARGB(255, 255, 4, 0),
+            size: 80,
           )
-        : const Icon(Icons.check_circle, color: Color(0xFF3BB273), size: 72);
+        : const Icon(Icons.check_circle, color: Color(0xFF3BB273), size: 80);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
@@ -79,9 +210,10 @@ class YamnetCard extends StatelessWidget {
                 children: [
                   mainSymbol,
                   const SizedBox(height: 12),
-
                   Text(
-                    isDanger ? '위험음 감지' : '안전',
+                    effectiveIsDanger
+                        ? '위험음 감지'
+                        : (_delayActive ? '안전 (확인 중…)' : '안전'),
                     style: TextStyle(
                       fontSize: 26,
                       fontWeight: FontWeight.w700,
@@ -94,7 +226,13 @@ class YamnetCard extends StatelessWidget {
                     textAlign: TextAlign.center,
                     style: const TextStyle(fontSize: 18, color: Colors.black87),
                   ),
-
+                  if (_delayActive) ...[
+                    const SizedBox(height: 6),
+                    const Text(
+                      '사이렌/경적소리 감지됨 — 7초 확인 후 표시',
+                      style: TextStyle(fontSize: 12, color: Colors.black54),
+                    ),
+                  ],
                   const SizedBox(height: 20),
 
                   if (dirDeg != null) ...[
@@ -119,18 +257,9 @@ class YamnetCard extends StatelessWidget {
                         ),
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    // Text(
-                    //   '${dirDeg.toStringAsFixed(0)}°',
-                    //   style: const TextStyle(
-                    //     fontSize: 14,
-                    //     color: Colors.black54,
-                    //   ),
-                    // ),
                     const SizedBox(height: 16),
                   ],
 
-                  // 📊 보조 정보 (신뢰도/에너지)
                   Wrap(
                     alignment: WrapAlignment.center,
                     spacing: 12,
@@ -158,150 +287,5 @@ class YamnetCard extends StatelessWidget {
         },
       ),
     );
-  }
-
-  (String, double) _normalizeLabelAndConf(String rawLabel, double rawConf) {
-    final s = rawLabel.trim();
-    if (s.startsWith('{') && s.contains('label:')) {
-      String label = rawLabel;
-      double conf = rawConf;
-      for (final part in s.substring(1, s.length - 1).split(',')) {
-        final kv = part.split(':');
-        if (kv.length >= 2) {
-          final key = kv[0].trim();
-          final val = kv.sublist(1).join(':').trim();
-          if (key == 'label') label = val;
-          if (key == 'conf') conf = double.tryParse(val) ?? conf;
-        }
-      }
-      return (label, conf);
-    }
-    return (rawLabel, rawConf);
-  }
-
-  static String _emojiForDanger(String label) {
-    final s = label.toLowerCase();
-    if (s.contains('siren') || s.contains('alarm') || s.contains('buzzer')) {
-      return '🚨';
-    }
-    if (s.contains('engine') ||
-        s.contains('vehicle') ||
-        s.contains('truck') ||
-        s.contains('motorcycle') ||
-        s.contains('idling') ||
-        s.contains('revving')) {
-      return '🚗';
-    }
-    if (s.contains('car horn') ||
-        s.contains('air horn') ||
-        s.contains('horn') ||
-        s.contains('honk')) {
-      return '📣';
-    }
-    if (s.contains('scream') ||
-        s.contains('shout') ||
-        s.contains('yell') ||
-        s.contains('shriek')) {
-      return '😱';
-    }
-    if (s.contains('explosion') ||
-        s.contains('bang') ||
-        s.contains('blast') ||
-        s.contains('boom')) {
-      return '💥';
-    }
-    if (s.contains('glass')) return '🪟';
-    if (s.contains('hiss') ||
-        s.contains('gas leak') ||
-        s.contains('steam leak') ||
-        s.contains('air leak')) {
-      return '🫧';
-    }
-    if (s.contains('cry') || s.contains('infant')) return '👶😭';
-    return '⚠️';
-  }
-
-  static String _labelKo(String label) {
-    final s = label.toLowerCase();
-
-    // 자주 보이는 라벨 추가 매핑
-    if (s.contains('silence')) return '무음';
-    if (s.contains('rustle')) return '바스락 소리';
-    if (s.contains('squish')) return '찌부딪히는 소리';
-    if (s.contains('burst') || s.contains('pop')) return '펑/터지는 소리';
-    if (s.contains('basketball') && s.contains('bounce')) return '농구공 바운스';
-    if (s == 'vehicle' || s.contains('vehicle')) return '차량 소리';
-    if (s.contains('sound effect')) return '효과음';
-
-    if (s.contains('siren') || s.contains('alarm') || s.contains('buzzer')) {
-      return '화재 경보음';
-    }
-    if (s.contains('engine') ||
-        s.contains('vehicle ') ||
-        s.contains('truck') ||
-        s.contains('motorcycle') ||
-        s.contains('idling') ||
-        s.contains('revving')) {
-      return '차량 엔진 소리';
-    }
-    if (s.contains('car horn') ||
-        s.contains('air horn') ||
-        s.contains('horn') ||
-        s.contains('honk')) {
-      return '차량 경적';
-    }
-    if (s.contains('scream') ||
-        s.contains('shout') ||
-        s.contains('yell') ||
-        s.contains('shriek')) {
-      return '비명 소리';
-    }
-    if (s.contains('cry') || s.contains('infant')) return '아기 울음';
-    if (s.contains('explosion') ||
-        s.contains('bang') ||
-        s.contains('blast') ||
-        s.contains('boom')) {
-      return '폭발음';
-    }
-    if (s.contains('glass')) return '유리 깨짐';
-    if (s.contains('hiss') ||
-        s.contains('gas leak') ||
-        s.contains('steam leak') ||
-        s.contains('air leak')) {
-      return '가스/증기 누출음';
-    }
-    if (s.contains('speech') ||
-        s.contains('talking') ||
-        s.contains('conversation') ||
-        s.contains('narration') ||
-        s.contains('monologue') ||
-        s.contains('debate') ||
-        s.contains('dialogue') ||
-        s.contains('chant') ||
-        s.contains('narrator') ||
-        s.contains('singing')) {
-      return '대화/말소리';
-    }
-    if (s.contains('safe')) return '위험상황 아님';
-    return label.isEmpty ? '위험음 감지' : '기타 소리';
-  }
-
-  /// 비위험 판정
-  static bool _isNonDanger(String label) {
-    final s = label.toLowerCase();
-    final isSpeechLike =
-        s.contains('speech') ||
-        s.contains('talking') ||
-        s.contains('conversation') ||
-        s.contains('narration') ||
-        s.contains('monologue') ||
-        s.contains('debate') ||
-        s.contains('dialogue') ||
-        s.contains('chant') ||
-        s.contains('narrator') ||
-        s.contains('singing') ||
-        s.contains('silence');
-    final isSafe = s.contains('safe');
-    return isSpeechLike || isSafe;
   }
 }
