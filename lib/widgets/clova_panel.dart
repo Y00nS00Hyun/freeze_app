@@ -13,7 +13,7 @@ class ClovaPanel extends StatelessWidget {
     final text = event?.text ?? '...';
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.all(40),
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.all(20),
@@ -29,7 +29,7 @@ class ClovaPanel extends StatelessWidget {
               style: GoogleFonts.gowunDodum(
                 color: Colors.white.withOpacity(0.9),
                 fontWeight: FontWeight.w700,
-                fontSize: 35,
+                fontSize: 40,
                 shadows: const [
                   Shadow(color: Colors.black26, offset: Offset(0, 1)),
                 ],

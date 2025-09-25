@@ -184,20 +184,20 @@ class _YamnetCardState extends State<YamnetCard> {
                   Text(
                     effectiveIsDanger ? ko : '안전',
                     style: TextStyle(
-                      fontSize: 28,
+                      fontSize: 48,
                       fontWeight: FontWeight.w800,
                       color: titleColor,
                     ),
                   ),
 
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 30),
 
                   if (dirDeg != null) ...[
                     const Text(
                       '방향 정보',
-                      style: TextStyle(fontSize: 16, color: Colors.black87),
+                      style: TextStyle(fontSize: 30, color: Colors.black87),
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 25),
 
                     // 좌우 반전 + 회전 (요청 반영)
                     Transform(
@@ -206,15 +206,15 @@ class _YamnetCardState extends State<YamnetCard> {
                         ..rotateZ((dirDeg - 90) * math.pi / 180.0)
                         ..scale(-1.0, 1.0, 1.0),
                       child: Container(
-                        width: 84,
-                        height: 84,
+                        width: 120,
+                        height: 120,
                         decoration: const BoxDecoration(
                           shape: BoxShape.circle,
                           color: Color(0xFFB3E5EB),
                         ),
                         child: const Icon(
                           Icons.arrow_forward_rounded,
-                          size: 44,
+                          size: 60,
                           color: Colors.white,
                         ),
                       ),
@@ -224,25 +224,32 @@ class _YamnetCardState extends State<YamnetCard> {
                   ],
 
                   // 📊 보조 정보 (신뢰도/에너지)
-                  Wrap(
-                    alignment: WrapAlignment.center,
-                    spacing: 12,
-                    runSpacing: 12,
-                    children: [
-                      Chip(
-                        label: Text(
-                          '신뢰도 ${(safeConf * 100).toStringAsFixed(1)}%',
-                        ),
-                        backgroundColor: const Color(0xFFF3F6F9),
-                        side: const BorderSide(color: Color(0xFFE3E8EE)),
-                      ),
-                      if (energy != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 20), // 위쪽 여백 20
+                    child: Wrap(
+                      alignment: WrapAlignment.center,
+                      spacing: 12,
+                      runSpacing: 12,
+                      children: [
                         Chip(
-                          label: Text('에너지 ${energy.toStringAsFixed(1)}'),
-                          backgroundColor: const Color(0xFFF6F9FC),
+                          label: Text(
+                            '신뢰도 ${(safeConf * 100).toStringAsFixed(1)}%',
+                            style: const TextStyle(fontSize: 18),
+                          ),
+                          backgroundColor: const Color(0xFFF3F6F9),
                           side: const BorderSide(color: Color(0xFFE3E8EE)),
                         ),
-                    ],
+                        if (energy != null)
+                          Chip(
+                            label: Text(
+                              '에너지 ${energy.toStringAsFixed(1)}',
+                              style: const TextStyle(fontSize: 18),
+                            ),
+                            backgroundColor: const Color(0xFFF6F9FC),
+                            side: const BorderSide(color: Color(0xFFE3E8EE)),
+                          ),
+                      ],
+                    ),
                   ),
                 ],
               ),
