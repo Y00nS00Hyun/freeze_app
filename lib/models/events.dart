@@ -1,25 +1,49 @@
+// lib/models/events.dart
 import 'dart:convert';
 import 'package:flutter/foundation.dart' show debugPrint;
 
+/// 모든 수신 이벤트의 공통 베이스
 abstract class EventBase {
-  final String event;
-  final String source;
+  final String event; // ex) 'yamnet', 'transcript', 'yolo'
+  final String source; // ex) 'yamnet', 'whisper', 'clova', 'yolo'
 
   const EventBase({required this.event, required this.source});
 
+  /// 서버에서 온 JSON을 적절한 이벤트 클래스로 라우팅
   factory EventBase.fromJson(Map<String, dynamic> j) {
     final src = (j['source'] ?? '').toString().toLowerCase();
     final ty = (j['type'] ?? j['event'] ?? '').toString().toLowerCase();
+    final ev = (j['event'] ?? j['type'] ?? '').toString().toLowerCase();
 
-    // YOLO
+    debugPrint('[EVT][RAW.keys] ${j.keys.toList()}');
+    debugPrint(
+      '[EVT][RAW.route] src="$src" ty="$ty" ev="$ev" '
+      'hasTranscript=${j.containsKey('transcript')}',
+    );
+
+    // 1) YOLO 먼저
     if (src == 'yolo' ||
         ty == 'yolo' ||
         ty == 'snapshot' ||
         ty == 'yolo_recording_done') {
+      debugPrint('[EVT][ROUTE] -> YOLO');
       return YoloEvent.fromJson(j);
     }
 
-    // YAMNet: 키 휴리스틱을 확장
+    // 2) STT (Clova/Whisper/Transcript)
+    if (src == 'clova' ||
+        src == 'whisper' ||
+        ty == 'clova' ||
+        ty == 'stt' ||
+        ty == 'whisper' ||
+        ty == 'transcript' ||
+        ev == 'transcript' ||
+        j.containsKey('transcript')) {
+      debugPrint('[EVT][ROUTE] -> CLOVA/WHISPER (STT)');
+      return ClovaEvent.fromJson(j);
+    }
+
+    // 3) YAMNet
     final hasYamKeys =
         j.containsKey('cat') ||
         j.containsKey('raw') ||
@@ -27,37 +51,24 @@ abstract class EventBase {
         j.containsKey('group') ||
         j.containsKey('dbfs') ||
         j.containsKey('latency') ||
-        // 흔한 조합: label + (confidence|conf|score)
         ((j.containsKey('label') || j.containsKey('name')) &&
             (j.containsKey('confidence') ||
                 j.containsKey('conf') ||
                 j.containsKey('score'))) ||
-        // 방향/에너지 계열
         (j.containsKey('direction') ||
             j.containsKey('dir') ||
             j.containsKey('energy') ||
             j.containsKey('rms') ||
             j.containsKey('db')) ||
-        // 타임스탬프 계열
         (j.containsKey('ms') || j.containsKey('timestamp'));
 
     if (src == 'yamnet' || ty == 'yamnet' || hasYamKeys) {
-      debugPrint('[EVT][ROUTE] -> YAMNet  keys=${j.keys}');
+      debugPrint('[EVT][ROUTE] -> YAMNet');
       return YamnetEvent.fromJson(j);
     }
 
-    // STT (clova/whisper 공용 처리)
-    if (src == 'clova' ||
-        src == 'whisper' ||
-        ty == 'clova' ||
-        ty == 'stt' ||
-        ty == 'whisper') {
-      return ClovaEvent.fromJson(j);
-    }
-
-    debugPrint(
-      '[EVT] Unknown route: src="$src", ty="$ty", keys=${j.keys.toList()}',
-    );
+    // 4) Unknown
+    debugPrint('[EVT][ROUTE] -> UNKNOWN (src="$src" ty="$ty" ev="$ev")');
     return UnknownEvent(j);
   }
 
@@ -65,10 +76,14 @@ abstract class EventBase {
   String toString() => '$runtimeType(event=$event, source=$source)';
 }
 
+/// ─────────────────────────────────────────────────────────────────
+/// 공용 파서 유틸
 double _asDouble(dynamic v, [double d = 0]) =>
     (v is num) ? v.toDouble() : (double.tryParse((v ?? '').toString()) ?? d);
+
 int _asInt(dynamic v, [int d = 0]) =>
     (v is num) ? v.toInt() : (int.tryParse((v ?? '').toString()) ?? d);
+
 num? _asNumNullable(dynamic v) {
   if (v == null) return null;
   if (v is num) return v;
@@ -79,7 +94,32 @@ List<num> _asNumList(dynamic v) => (v is List)
     ? v.map<num>((e) => _asNumNullable(e) ?? 0).toList(growable: false)
     : const <num>[];
 
-/* ---------- YOLO ---------- */
+String? _headText(String? s) {
+  if (s == null) return null;
+  final i = s.indexOf('(');
+  return (i > 0 ? s.substring(0, i) : s).trim();
+}
+
+double? _extractParenScore(String? s) {
+  if (s == null) return null;
+  final i = s.indexOf('(');
+  final j = s.indexOf(')', i + 1);
+  if (i >= 0 && j > i) {
+    return double.tryParse(s.substring(i + 1, j));
+  }
+  return null;
+}
+
+double? _parseLatencySeconds(dynamic v) {
+  if (v == null) return null;
+  if (v is num) return v.toDouble();
+  final s = v.toString();
+  final numStr = s.replaceAll(RegExp('[^0-9\\.-]'), '');
+  return double.tryParse(numStr);
+}
+
+/// ─────────────────────────────────────────────────────────────────
+/// YOLO 이벤트
 class YoloEvent extends EventBase {
   final String label;
   final double confidence;
@@ -112,13 +152,10 @@ class YoloEvent extends EventBase {
                   (ty == 'snapshot' ? 'snapshot' : ''))
               .toString(),
       confidence: _asDouble(j['group_conf'] ?? j['confidence'] ?? 0),
-
       bbox: _asNumList(j['bbox']),
-
       time: (j['time'] ?? j['ts'] ?? j['timestamp']) == null
           ? null
           : _asInt(j['time'] ?? j['ts'] ?? j['timestamp']),
-
       file: _pickFileUrl(j) ?? dataUrl,
       thumbnail: (j['thumbnail'] ?? j['thumb'] ?? dataUrl)?.toString(),
     );
@@ -139,9 +176,10 @@ class YoloEvent extends EventBase {
   }
 }
 
-/* ---------- CLOVA ---------- */
+/// ─────────────────────────────────────────────────────────────────
+/// STT(Clova/Whisper/Transcript) 이벤트
 class ClovaEvent extends EventBase {
-  final String text;
+  final String text; // 화면에 보여줄 문장
   final String? kind;
   final int? sr;
   final double? dur;
@@ -157,28 +195,35 @@ class ClovaEvent extends EventBase {
     this.dbfs,
   });
 
-  factory ClovaEvent.fromJson(Map<String, dynamic> j) => ClovaEvent(
-    event: (j['event'] ?? '').toString(),
-    source: (j['source'] ?? 'clova').toString(),
-    text: (j['transcript'] ?? j['text'] ?? '').toString(),
-    kind: j['kind']?.toString(),
-    sr: (j['sr'] is int)
-        ? j['sr'] as int
-        : int.tryParse(j['sr']?.toString() ?? ''),
-    dur: (j['dur'] is num)
-        ? (j['dur'] as num).toDouble()
-        : double.tryParse(j['dur']?.toString() ?? ''),
-    dbfs: (j['dbfs'] is num)
-        ? (j['dbfs'] as num).toDouble()
-        : double.tryParse(j['dbfs']?.toString() ?? ''),
-  );
+  factory ClovaEvent.fromJson(Map<String, dynamic> j) {
+    final t = (j['transcript'] ?? j['text'] ?? j['sentence'] ?? '').toString();
+    final ev = (j['event'] ?? j['type'] ?? 'transcript').toString();
+    final src = (j['source'] ?? 'clova').toString();
+    debugPrint('[CLOVA][PARSE] src=$src ev=$ev text="$t"');
+    return ClovaEvent(
+      event: ev,
+      source: src,
+      text: t,
+      kind: j['kind']?.toString(),
+      sr: (j['sr'] is int)
+          ? j['sr'] as int
+          : int.tryParse(j['sr']?.toString() ?? ''),
+      dur: (j['dur'] is num)
+          ? (j['dur'] as num).toDouble()
+          : double.tryParse(j['dur']?.toString() ?? ''),
+      dbfs: (j['dbfs'] is num)
+          ? (j['dbfs'] as num).toDouble()
+          : double.tryParse(j['dbfs']?.toString() ?? ''),
+    );
+  }
 
   @override
   String toString() =>
       'ClovaEvent(text="$text", kind=$kind, sr=$sr, dur=$dur, dbfs=$dbfs)';
 }
 
-/* ---------- YAMNet ---------- */
+/// ─────────────────────────────────────────────────────────────────
+/// YAMNet 이벤트
 class YamnetEvent extends EventBase {
   final String label;
   final double confidence;
@@ -205,18 +250,15 @@ class YamnetEvent extends EventBase {
   });
 
   factory YamnetEvent.fromJson(Map<String, dynamic> j) {
-    // 1) label 후보: label/name/raw/cat 중 앞부분
     String? label = (j['label'] ?? j['name'])?.toString().trim();
     label ??= _headText((j['raw'] ?? j['cat'])?.toString());
 
-    // 2) confidence 후보: confidence/conf/score 또는 raw/cat의 괄호값
     double? _numMaybePercent(dynamic v) {
       if (v == null) return null;
       if (v is num) return v.toDouble();
       final s = v.toString().trim();
       final n = double.tryParse(s.replaceAll('%', ''));
       if (n == null) return null;
-      // 끝에 % 있으면 0~1 스케일로 바꿔줌
       return s.endsWith('%') ? n / 100.0 : n;
     }
 
@@ -228,23 +270,18 @@ class YamnetEvent extends EventBase {
         _extractParenScore(j['cat']?.toString()) ??
         0.0;
 
-    // 0~100 값이 들어온 경우 보정
     if (conf > 1.0) conf = conf / 100.0;
-
-    // 0~1 범위로 클램프
     conf = conf.clamp(0.0, 1.0);
 
-    // 3) 기타 필드
     final dir = _asNumNullable(j['direction'] ?? j['dir']);
     final energy = _asNumNullable(j['energy'] ?? j['rms'] ?? j['db']);
     final ms = (j['ms'] == null)
         ? (j['timestamp'] is int ? j['timestamp'] as int : null)
         : _asInt(j['ms']);
-
     final danger = (j['danger'] is bool) ? j['danger'] as bool : null;
     final group = j['group']?.toString();
     final dbfs = _asNumNullable(j['dbfs'])?.toDouble();
-    final latencySec = _parseLatencySeconds(j['latency']);
+    final latency = _parseLatencySeconds(j['latency']);
 
     return YamnetEvent(
       event: (j['event'] ?? j['type'] ?? 'yamnet').toString(),
@@ -257,7 +294,7 @@ class YamnetEvent extends EventBase {
       danger: danger,
       group: group,
       dbfs: dbfs,
-      latencySec: latencySec,
+      latencySec: latency,
     );
   }
 
@@ -266,30 +303,8 @@ class YamnetEvent extends EventBase {
       'YamnetEvent(label=$label, conf=$confidence, dir=$direction, energy=$energy, ms=$ms)';
 }
 
-String? _headText(String? s) {
-  if (s == null) return null;
-  final i = s.indexOf('(');
-  return (i > 0 ? s.substring(0, i) : s).trim();
-}
-
-double? _extractParenScore(String? s) {
-  if (s == null) return null;
-  final i = s.indexOf('(');
-  final j = s.indexOf(')', i + 1);
-  if (i >= 0 && j > i) {
-    return double.tryParse(s.substring(i + 1, j));
-  }
-  return null;
-}
-
-double? _parseLatencySeconds(dynamic v) {
-  if (v == null) return null;
-  if (v is num) return v.toDouble();
-  final s = v.toString();
-  final numStr = s.replaceAll(RegExp('[^0-9\\.-]'), '');
-  return double.tryParse(numStr);
-}
-
+/// ─────────────────────────────────────────────────────────────────
+/// 알 수 없는 이벤트
 class UnknownEvent extends EventBase {
   final Map<String, dynamic> raw;
 
@@ -303,6 +318,7 @@ class UnknownEvent extends EventBase {
   String toString() => 'UnknownEvent(raw=$raw)';
 }
 
+/// 디버깅용 pretty JSON
 String prettyJsonBody(List<int> bodyBytes) {
   final s = utf8.decode(bodyBytes);
   try {

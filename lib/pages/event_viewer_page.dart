@@ -1,3 +1,4 @@
+// lib/pages/event_viewer_page.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -19,8 +20,8 @@ class EventViewerPage extends StatefulWidget {
 class _EventViewerPageState extends State<EventViewerPage> {
   late final WsClient _ws;
 
-  YamnetEvent? _yam; // 실시간 최신 이벤트
-  YamnetEvent? _holdYam; // 🔒 위험 홀드용 버퍼
+  YamnetEvent? _yam;
+  YamnetEvent? _holdYam;
   ClovaEvent? _clova;
   final List<YoloEvent> _yolos = [];
   final Set<String> _yoloKeys = {};
@@ -28,16 +29,13 @@ class _EventViewerPageState extends State<EventViewerPage> {
 
   Timer? _yamHideTimer;
 
-  // 알림 스팸 방지
   String? _lastNotiKey;
   DateTime _lastNotiAt = DateTime.fromMillisecondsSinceEpoch(0);
   static const Duration _notiCooldown = Duration(seconds: 3);
 
-  // 위험 화면 최소 유지(고정) 시간
   DateTime? _dangerHoldUntil;
   static const Duration _dangerHold = Duration(seconds: 7);
 
-  // YAMNet 신뢰도 하한선
   static const double _minConfidence = 0.30;
 
   bool get _isHolding =>
@@ -50,13 +48,40 @@ class _EventViewerPageState extends State<EventViewerPage> {
       widget.endpoint,
       onEvent: (evt) {
         if (!mounted) return;
+
+        // evt를 Map으로 변환
+        Map<String, dynamic>? m;
+        try {
+          m = (evt as dynamic).toJson();
+        } catch (_) {
+          // 변환 안 되면 무시
+        }
+
+        if (m != null &&
+            m['source'] == 'whisper' &&
+            m['event'] == 'transcript') {
+          final txt = (m['transcript'] ?? '').toString();
+          debugPrint('[UI] Whisper->Clova text="$txt"');
+
+          // ClovaEvent 생성 (필요한 필드만)
+          setState(
+            () => _clova = ClovaEvent(
+              event: 'transcript',
+              source: 'clova',
+              text: txt,
+            ),
+          );
+          return;
+        }
+
+        // 기존 분기
         if (evt is YamnetEvent) {
           _onYamnet(evt);
           return;
         }
         if (evt is ClovaEvent) {
-          _clova = evt;
-          setState(() {});
+          debugPrint('[UI] ClovaEvent text="${evt.text}"');
+          setState(() => _clova = evt);
           return;
         }
         if (evt is YoloEvent) {
@@ -64,6 +89,7 @@ class _EventViewerPageState extends State<EventViewerPage> {
           return;
         }
       },
+
       onState: (s) async {
         if (!mounted) return;
         setState(() => _conn = s);
@@ -71,6 +97,7 @@ class _EventViewerPageState extends State<EventViewerPage> {
           await Future.delayed(const Duration(milliseconds: 150));
           if (!mounted) return;
           _ws.sendJson({'action': 'subscribe', 'topic': 'public'});
+          _ws.sendJson({'action': 'subscribe', 'topic': 'app'});
         }
       },
     )..connect();
@@ -83,20 +110,14 @@ class _EventViewerPageState extends State<EventViewerPage> {
     super.dispose();
   }
 
-  // ───────────── YAMNet ─────────────
   void _onYamnet(YamnetEvent e) {
     final label = e.label.trim().isEmpty ? 'Unknown' : e.label.trim();
     final conf = e.confidence;
-
     final isDanger =
         (e.danger ?? !_isNonDanger(label)) && conf >= _minConfidence;
 
-    if (_isHolding) {
-      // 🔒 홀드 중엔 '안전' 업데이트는 무시 → 화면 유지
-      if (!isDanger) return;
-    }
+    if (_isHolding && !isDanger) return;
 
-    // 최신 이벤트는 항상 갱신(로그/통계용)
     _yam = YamnetEvent(
       event: e.event,
       source: e.source,
@@ -112,20 +133,15 @@ class _EventViewerPageState extends State<EventViewerPage> {
     );
 
     if (isDanger) {
-      // 🔒 위험 감지 시: 홀드 버퍼에 저장 + 5초 연장
       _holdYam = _yam;
       _dangerHoldUntil = DateTime.now().add(_dangerHold);
 
       _yamHideTimer?.cancel();
       _yamHideTimer = Timer(_dangerHold, () {
         if (!mounted) return;
-        // 홀드 해제만; 화면은 다음 업데이트 때 자연스레 바뀜
         _dangerHoldUntil = null;
-        // 원하면 자동 숨김도 가능:
-        // setState(() => _holdYam = null);
       });
 
-      // 알림(쿨다운)
       final key = '${e.ms ?? 0}:${label.toLowerCase()}';
       final now = DateTime.now();
       if (!(_lastNotiKey == key &&
@@ -136,7 +152,6 @@ class _EventViewerPageState extends State<EventViewerPage> {
         NotiService.I.showDanger('⚠️ 비상 상황 감지', '$label · 신뢰도 $percent%');
       }
     }
-
     setState(() {});
   }
 
@@ -158,7 +173,6 @@ class _EventViewerPageState extends State<EventViewerPage> {
     return isSpeechLike || isSafe;
   }
 
-  // ───────────── YOLO ─────────────
   void _onYolo(YoloEvent e) {
     final ty = e.event.toLowerCase();
     if (ty == 'yolo_recording_done') return;
@@ -181,7 +195,6 @@ class _EventViewerPageState extends State<EventViewerPage> {
     setState(() {});
   }
 
-  // ───────────── 기타 ─────────────
   String? _guessBaseUrlFromEndpoint(String wsEndpoint) {
     final u = Uri.tryParse(wsEndpoint);
     if (u == null) return null;
@@ -203,11 +216,8 @@ class _EventViewerPageState extends State<EventViewerPage> {
 
   @override
   Widget build(BuildContext context) {
-    // 화면 크기에 맞춰 YAM 카드 영역 높이 동적 계산 (잘림 방지)
     final h = MediaQuery.of(context).size.height;
     final yamHeight = (h * 0.50).clamp(380.0, 560.0);
-
-    // 🔒 홀드 중이면 _holdYam 표출, 아니면 최신 _yam
     final displayed = _isHolding ? _holdYam : _yam;
 
     return Scaffold(
@@ -231,7 +241,6 @@ class _EventViewerPageState extends State<EventViewerPage> {
             color: const Color(0xFF78B8C4),
           ),
         ),
-        iconTheme: const IconThemeData(color: Color(0xFF78B8C4)),
         actions: [
           IconButton(
             tooltip: 'YOLO 결과 보기',
@@ -244,8 +253,6 @@ class _EventViewerPageState extends State<EventViewerPage> {
         child: Column(
           children: [
             const SizedBox(height: 12),
-
-            // 카드 영역(위치 고정) + 내부 스크롤 허용(넘칠 때만)
             SizedBox(
               height: yamHeight,
               child: Center(
@@ -259,8 +266,7 @@ class _EventViewerPageState extends State<EventViewerPage> {
                 ),
               ),
             ),
-
-            SizedBox(height: 330, child: ClovaPanel(event: _clova)),
+            Expanded(child: ClovaPanel(event: _clova)),
           ],
         ),
       ),

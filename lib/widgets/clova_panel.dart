@@ -1,3 +1,4 @@
+// lib/widgets/clova_panel.dart
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../models/events.dart';
@@ -23,7 +24,6 @@ class ClovaPanel extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 헤더 글씨체 적용
             Text(
               header,
               style: GoogleFonts.gowunDodum(
@@ -40,9 +40,8 @@ class ClovaPanel extends StatelessWidget {
               child: SingleChildScrollView(
                 child: Text(
                   text,
-                  // 본문 글씨체 적용
                   style: GoogleFonts.gowunDodum(
-                    color: const Color(0xFF4A4A4A),
+                    color: const Color(0xFF4A4A4A), // 필요하면 빨강으로 바꿔도 OK
                     fontSize: 22,
                     height: 1.4,
                     fontWeight: FontWeight.w500,
