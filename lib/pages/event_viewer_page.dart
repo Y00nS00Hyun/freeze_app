@@ -5,8 +5,8 @@ import '../models/events.dart';
 import '../services/ws_client.dart';
 import '../widgets/yamnet_card.dart';
 import '../widgets/clova_panel.dart';
-import 'yolo_page.dart';
-import '../services/notification_service.dart'; // ⬅ 알림
+import '../services/notification_service.dart';
+import '../pages/yolo_page.dart';
 
 class EventViewerPage extends StatefulWidget {
   const EventViewerPage({super.key, required this.endpoint});
@@ -23,7 +23,7 @@ class _EventViewerPageState extends State<EventViewerPage> {
   ClovaEvent? _clova;
   final List<YoloEvent> _yolos = [];
   final Set<String> _yoloKeys = {};
-  String _conn = '연결 준비...'; // 화면에 표시하진 않지만 내부 상태는 유지
+  String _conn = '연결 준비...';
 
   Timer? _yamHideTimer;
   bool _showYam = true;
@@ -32,6 +32,10 @@ class _EventViewerPageState extends State<EventViewerPage> {
   String? _lastNotiKey;
   DateTime _lastNotiAt = DateTime.fromMillisecondsSinceEpoch(0);
   static const Duration _notiCooldown = Duration(seconds: 3);
+
+  // 위험 화면 최소 유지(고정) 시간
+  DateTime? _dangerHoldUntil;
+  static const Duration _dangerHold = Duration(seconds: 5);
 
   // YAMNet 신뢰도 하한선
   static const double _minConfidence = 0.30;
@@ -43,7 +47,6 @@ class _EventViewerPageState extends State<EventViewerPage> {
       widget.endpoint,
       onEvent: (evt) {
         if (!mounted) return;
-
         if (evt is YamnetEvent) {
           _onYamnet(evt);
           return;
@@ -60,7 +63,7 @@ class _EventViewerPageState extends State<EventViewerPage> {
       },
       onState: (s) async {
         if (!mounted) return;
-        setState(() => _conn = s); // 화면엔 안 보이지만 상태는 저장
+        setState(() => _conn = s);
         if (s == 'connected') {
           await Future.delayed(const Duration(milliseconds: 150));
           if (!mounted) return;
@@ -82,6 +85,15 @@ class _EventViewerPageState extends State<EventViewerPage> {
     final label = e.label.trim().isEmpty ? 'Unknown' : e.label.trim();
     final conf = e.confidence;
 
+    final isDanger =
+        (e.danger ?? !_isNonDanger(label)) && conf >= _minConfidence;
+
+    // 홀드 중에는 안전 업데이트 무시
+    if (_dangerHoldUntil != null &&
+        DateTime.now().isBefore(_dangerHoldUntil!)) {
+      if (!isDanger) return;
+    }
+
     setState(() {
       _yam = YamnetEvent(
         event: e.event,
@@ -101,10 +113,16 @@ class _EventViewerPageState extends State<EventViewerPage> {
 
     _yamHideTimer?.cancel();
 
-    // ✅ 비상상황일 때만 알림
-    final isDanger =
-        (e.danger ?? !_isNonDanger(label)) && conf >= _minConfidence;
     if (isDanger) {
+      _dangerHoldUntil = DateTime.now().add(_dangerHold);
+
+      _yamHideTimer = Timer(_dangerHold, () {
+        if (!mounted) return;
+        _dangerHoldUntil = null;
+        // 필요하면 자동 숨김:
+        // setState(() => _showYam = false);
+      });
+
       final key = '${e.ms ?? 0}:${label.toLowerCase()}';
       final now = DateTime.now();
       if (!(_lastNotiKey == key &&
@@ -114,12 +132,6 @@ class _EventViewerPageState extends State<EventViewerPage> {
         final percent = (conf * 100).toStringAsFixed(0);
         NotiService.I.showDanger('⚠️ 비상 상황 감지', '$label · 신뢰도 $percent%');
       }
-
-      final captured = e.ms;
-      _yamHideTimer = Timer(const Duration(seconds: 5), () {
-        if (!mounted) return;
-        if (_yam?.ms == captured) setState(() => _showYam = false);
-      });
     }
   }
 
@@ -186,6 +198,10 @@ class _EventViewerPageState extends State<EventViewerPage> {
 
   @override
   Widget build(BuildContext context) {
+    // 화면 크기에 맞춰 YAM 카드 영역 높이 동적 계산 (잘림 방지)
+    final h = MediaQuery.of(context).size.height;
+    final yamHeight = (h * 0.50).clamp(380.0, 560.0); // 50%를 기본, 최소/최대 제한
+
     return Scaffold(
       backgroundColor: const Color(0xFFF9FBFD),
       appBar: AppBar(
@@ -219,22 +235,19 @@ class _EventViewerPageState extends State<EventViewerPage> {
       body: SafeArea(
         child: Column(
           children: [
-            const SizedBox(height: 12), // 상단 간격만 약간
-            // ⛔️ 연결 상태 텍스트는 아예 표시 안 함
+            const SizedBox(height: 12),
 
-            // YAMNet 카드
-            Expanded(
+            // 카드 영역(위치 고정) + 내부 스크롤 허용(넘칠 때만)
+            SizedBox(
+              height: yamHeight,
               child: Center(
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 250),
-                  child: (_showYam && _yam != null)
-                      ? YamnetCard(
-                          key: ValueKey(
-                            'yam-${_yam!.ms}-${_yam!.label}-${_yam!.confidence}',
-                          ),
-                          event: _yam,
-                        )
-                      : const SizedBox.shrink(key: ValueKey('empty')),
+                child: AnimatedOpacity(
+                  opacity: (_showYam && _yam != null) ? 1.0 : 0.0,
+                  duration: const Duration(milliseconds: 180),
+                  child: SingleChildScrollView(
+                    physics: const BouncingScrollPhysics(),
+                    child: YamnetCard(event: _yam),
+                  ),
                 ),
               ),
             ),

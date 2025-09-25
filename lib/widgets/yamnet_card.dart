@@ -3,7 +3,6 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../models/events.dart';
 
-/// YAMNet 이벤트 표시 위젯(배경 박스 없이 깔끔한 흰 배경, 한국어 전용 출력)
 class YamnetCard extends StatelessWidget {
   const YamnetCard({super.key, this.event});
 
@@ -17,8 +16,41 @@ class YamnetCard extends StatelessWidget {
     final label = normalized.$1;
     final conf = normalized.$2;
     final safeConf = (conf.isFinite) ? conf.clamp(0.0, 1.0) : 0.0;
-    final dir = e.direction;
-    final double? dirDeg = (dir is num) ? dir.toDouble() : null;
+
+    double? _parseDirection(dynamic dir) {
+      if (dir == null) return null;
+
+      // 숫자면: 2π보다 작으면 라디안으로 보고 도(°)로 변환
+      if (dir is num) {
+        final v = dir.toDouble();
+        final isRad = v.abs() <= 2 * math.pi + 1e-6;
+        return isRad ? (v * 180.0 / math.pi) : v; // rad→deg, deg는 그대로
+      }
+
+      if (dir is String) {
+        // "123", "123°", "1.57 rad" 등
+        final direct = double.tryParse(dir);
+        if (direct != null) return direct; // 단위 없는 문자열은 '도'로 간주
+
+        final m = RegExp(
+          r'(-?\d+(?:\.\d+)?)\s*(deg|°|rad)?',
+          caseSensitive: false,
+        ).firstMatch(dir);
+        if (m != null) {
+          final v = double.parse(m.group(1)!);
+          final unit = (m.group(2) ?? 'deg').toLowerCase();
+          if (unit.contains('rad')) return v * 180.0 / math.pi;
+          return v; // deg/° 또는 단위 없음
+        }
+      }
+      return null;
+    }
+
+    final double? rawDirDeg = _parseDirection(e.direction);
+    final double? dirDeg = (rawDirDeg == null || !rawDirDeg.isFinite)
+        ? null
+        : ((rawDirDeg % 360) + 360) % 360; // 0~360으로 정규화
+
     final energy = e.energy;
     final ko = _labelKo(label);
     final isNonDanger = _isNonDanger(label);
@@ -87,6 +119,14 @@ class YamnetCard extends StatelessWidget {
                         ),
                       ),
                     ),
+                    const SizedBox(height: 8),
+                    // Text(
+                    //   '${dirDeg.toStringAsFixed(0)}°',
+                    //   style: const TextStyle(
+                    //     fontSize: 14,
+                    //     color: Colors.black54,
+                    //   ),
+                    // ),
                     const SizedBox(height: 16),
                   ],
 

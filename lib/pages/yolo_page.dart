@@ -298,11 +298,12 @@ class _SectionHeader extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(top: 8, bottom: 6),
       child: Text(
-        title, // 예: 2025-09-24
-        style: const TextStyle(
-          fontSize: 15,
-          fontWeight: FontWeight.w700,
-          color: Color(0xFF78B8C4),
+        title, // 날짜
+        style: GoogleFonts.gowunDodum(
+          fontSize: 19,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 1.5,
+          color: const Color.fromARGB(255, 50, 50, 50),
         ),
       ),
     );
