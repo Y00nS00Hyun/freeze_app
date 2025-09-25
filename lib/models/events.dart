@@ -160,7 +160,7 @@ class ClovaEvent extends EventBase {
   factory ClovaEvent.fromJson(Map<String, dynamic> j) => ClovaEvent(
     event: (j['event'] ?? '').toString(),
     source: (j['source'] ?? 'clova').toString(),
-    text: (j['text'] ?? '').toString(),
+    text: (j['transcript'] ?? j['text'] ?? '').toString(),
     kind: j['kind']?.toString(),
     sr: (j['sr'] is int)
         ? j['sr'] as int
