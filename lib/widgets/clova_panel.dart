@@ -16,7 +16,7 @@ class ClovaPanel extends StatelessWidget {
       padding: const EdgeInsets.all(40),
       child: Container(
         width: double.infinity,
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(45),
         decoration: BoxDecoration(
           color: const Color.fromARGB(255, 210, 229, 234),
           borderRadius: BorderRadius.circular(20),
