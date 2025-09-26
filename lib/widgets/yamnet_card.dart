@@ -301,41 +301,41 @@ class _YamnetCardState extends State<YamnetCard>
                   ],
 
                   // 📊 보조 정보 (신뢰도/에너지)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 20), // Wrap 통째로 위 여백
-                    child: Wrap(
-                      alignment: WrapAlignment.center,
-                      spacing: 12,
-                      runSpacing: 12,
-                      children: [
-                        Chip(
-                          label: Text(
-                            '신뢰도 ${(safeConf * 100).toStringAsFixed(1)}%',
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFF333333),
-                            ),
-                          ),
-                          backgroundColor: const Color(0xFFF3F6F9),
-                          side: const BorderSide(color: Color(0xFFE3E8EE)),
-                        ),
-                        if (energy != null)
-                          Chip(
-                            label: Text(
-                              '에너지 ${energy.toStringAsFixed(1)}',
-                              style: const TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w600,
-                                color: Color(0xFF333333),
-                              ),
-                            ),
-                            backgroundColor: const Color(0xFFF6F9FC),
-                            side: const BorderSide(color: Color(0xFFE3E8EE)),
-                          ),
-                      ],
-                    ),
-                  ),
+                  // Padding(
+                  //   padding: const EdgeInsets.only(top: 20), // Wrap 통째로 위 여백
+                  //   child: Wrap(
+                  //     alignment: WrapAlignment.center,
+                  //     spacing: 12,
+                  //     runSpacing: 12,
+                  //     children: [
+                  //       Chip(
+                  //         label: Text(
+                  //           '신뢰도 ${(safeConf * 100).toStringAsFixed(1)}%',
+                  //           style: const TextStyle(
+                  //             fontSize: 18,
+                  //             fontWeight: FontWeight.w600,
+                  //             color: Color(0xFF333333),
+                  //           ),
+                  //         ),
+                  //         backgroundColor: const Color(0xFFF3F6F9),
+                  //         side: const BorderSide(color: Color(0xFFE3E8EE)),
+                  //       ),
+                  //       if (energy != null)
+                  //         Chip(
+                  //           label: Text(
+                  //             '에너지 ${energy.toStringAsFixed(1)}',
+                  //             style: const TextStyle(
+                  //               fontSize: 18,
+                  //               fontWeight: FontWeight.w600,
+                  //               color: Color(0xFF333333),
+                  //             ),
+                  //           ),
+                  //           backgroundColor: const Color(0xFFF6F9FC),
+                  //           side: const BorderSide(color: Color(0xFFE3E8EE)),
+                  //         ),
+                  //     ],
+                  //   ),
+                  // ),
                 ],
               ),
             ),
