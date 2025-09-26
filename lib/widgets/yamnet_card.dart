@@ -280,7 +280,7 @@ class _YamnetCardState extends State<YamnetCard>
                     Transform(
                       alignment: Alignment.center,
                       transform: Matrix4.identity()
-                        ..rotateZ((dirDeg - 90) * math.pi / 180.0)
+                        ..rotateZ((dirDeg + 90) * math.pi / 180.0)
                         ..scale(-1.0, 1.0, 1.0),
                       child: Container(
                         width: 120,
