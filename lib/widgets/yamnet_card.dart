@@ -79,6 +79,9 @@ class _YamnetCardState extends State<YamnetCard>
   // 유지 중 실시간 갱신용 타이머(250ms)
   Timer? _tick;
 
+  // 유지 중 표시할 "마지막 위험 라벨(한글화)" 저장
+  String? _lastDangerKo;
+
   @override
   bool get wantKeepAlive => true;
 
@@ -105,7 +108,7 @@ class _YamnetCardState extends State<YamnetCard>
   // 이벤트 적용: 유지 대상이면 _dangerUntil 갱신
   void _applyEvent(YamnetEvent? e) {
     if (e == null) {
-      // 이벤트가 잠깐 null이어도 기존 유지시간은 보존(아무 것도 하지 않음)
+      // 이벤트가 잠깐 null이어도 기존 유지시간은 보존
       _startOrStopTicker();
       setState(() {});
       return;
@@ -114,6 +117,13 @@ class _YamnetCardState extends State<YamnetCard>
     final normalized = YamnetCard._normalizeLabelAndConf(e.label, e.confidence);
     final label = normalized.$1;
 
+    // 이번 이벤트 위험 여부 계산 후, 위험이면 마지막 위험 라벨 저장
+    final isNonDangerLocal = YamnetCard._isNonDanger(label);
+    final isDangerLocal = e.danger ?? !isNonDangerLocal;
+    if (isDangerLocal) {
+      _lastDangerKo = YamnetCard._labelKo(label);
+    }
+
     if (YamnetCard._shouldDelay(label)) {
       final now = DateTime.now();
       // 이미 유지 중이면 그대로 두되, 종료 시각이 지났다면 새로 7초 부여
@@ -121,8 +131,7 @@ class _YamnetCardState extends State<YamnetCard>
         _dangerUntil = now.add(const Duration(seconds: 7));
       }
     } else {
-      // safe여도 남은 유지 시간이 있으면 끝날 때까지 유지
-      // 여기서는 _dangerUntil을 바꾸지 않음
+      // safe여도 남은 유지 시간이 있으면 끝날 때까지 유지 (변경 없음)
     }
 
     _startOrStopTicker();
@@ -142,7 +151,6 @@ class _YamnetCardState extends State<YamnetCard>
       _tick = Timer.periodic(const Duration(milliseconds: 250), (_) {
         if (!mounted) return;
         if (!_isDelayActive) {
-          // 끝났으면 타이머 종료
           _tick?.cancel();
           _tick = null;
         }
@@ -204,6 +212,12 @@ class _YamnetCardState extends State<YamnetCard>
 
     // 지연(유지) 중이면 무조건 위험
     final effectiveIsDanger = _isDelayActive ? true : isDanger;
+
+    // 유지 중에 현재 라벨이 safe면, 마지막 위험 라벨을 제목으로 표시
+    final String titleText = effectiveIsDanger
+        ? (_isDelayActive && isNonDanger ? (_lastDangerKo ?? ko) : ko)
+        : '안전';
+
     final titleColor = effectiveIsDanger
         ? Colors.redAccent
         : const Color(0xFF3BB273);
@@ -216,7 +230,7 @@ class _YamnetCardState extends State<YamnetCard>
           )
         : const Icon(Icons.check_circle, color: Color(0xFF3BB273), size: 80);
 
-    // 남은 유지 시간(초) 표기용
+    // 남은 유지 시간(초) 표기용 (옵션)
     final int remainMs = _dangerUntil == null
         ? 0
         : (_dangerUntil!.millisecondsSinceEpoch -
@@ -239,15 +253,17 @@ class _YamnetCardState extends State<YamnetCard>
                   mainSymbol,
                   const SizedBox(height: 12),
 
-                  // 🔴/🟢 큰 제목: 위험이면 서버 라벨(한글화), 안전이면 "안전"
+                  // 🔴/🟢 큰 제목: 유지 중이면 마지막 위험 라벨, 아니면 안전/현재 라벨
                   Text(
-                    effectiveIsDanger ? ko : '안전',
+                    titleText,
                     style: const TextStyle(
                       fontSize: 48,
                       fontWeight: FontWeight.w800,
                     ).copyWith(color: titleColor),
                     textAlign: TextAlign.center,
                   ),
+
+                  // 유지 안내 칩을 활성화하면 UX가 더 명확해집니다 (원하면 주석 해제)
                   // if (_isDelayActive) ...[
                   //   const SizedBox(height: 8),
                   //   Chip(
@@ -276,12 +292,11 @@ class _YamnetCardState extends State<YamnetCard>
                     ),
                     const SizedBox(height: 25),
 
-                    // 좌우 반전 + 회전 (요청 반영)
+                    // 회전만 적용(0°=위, 90°=오른쪽, 180°=아래, 270°=왼쪽)
                     Transform(
                       alignment: Alignment.center,
                       transform: Matrix4.identity()
-                        ..rotateZ((dirDeg + 90) * math.pi / 180.0)
-                        ..scale(-1.0, 1.0, 1.0),
+                        ..rotateZ(-(dirDeg + 90) * math.pi / 180.0),
                       child: Container(
                         width: 120,
                         height: 120,
@@ -300,9 +315,9 @@ class _YamnetCardState extends State<YamnetCard>
                     const SizedBox(height: 16),
                   ],
 
-                  // 📊 보조 정보 (신뢰도/에너지)
+                  // 📊 보조 정보 (신뢰도/에너지) - 필요 시 주석 해제
                   // Padding(
-                  //   padding: const EdgeInsets.only(top: 20), // Wrap 통째로 위 여백
+                  //   padding: const EdgeInsets.only(top: 20),
                   //   child: Wrap(
                   //     alignment: WrapAlignment.center,
                   //     spacing: 12,
