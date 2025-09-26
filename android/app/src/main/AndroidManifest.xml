@@ -1,7 +1,19 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- 인터넷 권한: ws/http 통신용 -->
-    <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- 인터넷 권한: ws/http 통신용 (이미 있음) -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- [필수] Android 13+ 런타임 알림 권한 -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- [권장] 스케줄 알림 사용 시, 부팅 후 예약 복원하려면 필요 -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!-- [선택] 진동 사용 시 -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
+    <!-- [선택, 정말 '정확 알람'이 필요한 앱만] Android 14+ 정확 알람 -->
+    <!-- <uses-permission android:name="android.permission.USE_EXACT_ALARM" /> -->
 
     <application
         android:label="freeze_app"
@@ -23,8 +35,8 @@
                 android:resource="@style/NormalTheme" />
 
             <intent-filter>
-                <action android:name="android.intent.action.MAIN"/>
-                <category android:name="android.intent.category.LAUNCHER"/>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
 
@@ -32,13 +44,26 @@
             android:name="flutterEmbedding"
             android:value="2" />
 
+        <!-- ▼▼ flutter_local_notifications: 스케줄 알림용 리시버 2개 추가 ▼▼ -->
+        <receiver
+            android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver"
+            android:exported="false" />
+
+        <receiver
+            android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
     </application>
 
     <!-- 패키지 가시성 (Flutter 텍스트 플러그인에서 사용) -->
     <queries>
         <intent>
-            <action android:name="android.intent.action.PROCESS_TEXT"/>
-            <data android:mimeType="text/plain"/>
+            <action android:name="android.intent.action.PROCESS_TEXT" />
+            <data android:mimeType="text/plain" />
         </intent>
     </queries>
 </manifest>

@@ -149,7 +149,10 @@ class _EventViewerPageState extends State<EventViewerPage> {
         _lastNotiKey = key;
         _lastNotiAt = now;
         final percent = (conf * 100).toStringAsFixed(0);
-        NotiService.I.showDanger('⚠️ 비상 상황 감지', '$label · 신뢰도 $percent%');
+        NotiService.I.showNow(
+          title: '⚠️ 비상 상황 감지',
+          body: '$label · 신뢰도 $percent%',
+        );
       }
     }
     setState(() {});

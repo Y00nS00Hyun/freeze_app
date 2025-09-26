@@ -3,13 +3,14 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../models/events.dart';
+import '../services/notification_service.dart'; // ✅ 알림 서비스 import
 
-/// YAMNet 이벤트 표시 카드 (7초 유지 로직을 타임스탬프 기반으로 개선)
+/// YAMNet 이벤트 표시 카드 (7초 유지 + 위험 시 푸시 알림)
 class YamnetCard extends StatefulWidget {
   const YamnetCard({super.key, this.event});
   final YamnetEvent? event;
 
-  // 라벨/신뢰도 정규화: {label: ..., conf: ...} 형태 문자열도 파싱
+  // 라벨/신뢰도 정규화
   static (String, double) _normalizeLabelAndConf(
     String rawLabel,
     double rawConf,
@@ -19,7 +20,6 @@ class YamnetCard extends StatefulWidget {
 
     final s = rawLabel.trim();
     if (s.startsWith('{') && s.contains('label')) {
-      // 매우 관대한 파서: label: xxx, conf: yyy
       final body = s.substring(1, s.endsWith('}') ? s.length - 1 : s.length);
       for (final part in body.split(',')) {
         final kv = part.split(':');
@@ -46,7 +46,7 @@ class YamnetCard extends StatefulWidget {
     return (label, conf);
   }
 
-  // 화면표시용 한국어 라벨(단순화)
+  // 화면표시용 한국어 라벨
   static String _labelKo(String label) {
     final s = label.trim().toLowerCase();
     if (s == 'safe') return '안전';
@@ -55,13 +55,13 @@ class YamnetCard extends StatefulWidget {
     return label.isEmpty ? '대기 중' : label;
   }
 
-  // 비위험 판정: safe/안전
+  // 비위험 판정
   static bool _isNonDanger(String label) {
     final s = label.trim().toLowerCase();
     return s == 'safe' || s == '안전';
   }
 
-  // 7초 유지 대상: 사이렌/경적소리
+  // 7초 유지 대상
   static bool _shouldDelay(String label) {
     final s = label.trim().toLowerCase();
     return s == '사이렌' || s == '경적소리' || s == 'horn' || s == 'car horn';
@@ -73,14 +73,13 @@ class YamnetCard extends StatefulWidget {
 
 class _YamnetCardState extends State<YamnetCard>
     with AutomaticKeepAliveClientMixin {
-  // 유지 종료 시각(있으면 그때까지 위험 유지)
   DateTime? _dangerUntil;
-
-  // 유지 중 실시간 갱신용 타이머(250ms)
   Timer? _tick;
-
-  // 유지 중 표시할 "마지막 위험 라벨(한글화)" 저장
   String? _lastDangerKo;
+
+  // 🔔 알림 중복 방지
+  DateTime? _lastNotifyAt;
+  String? _lastNotifyLabel;
 
   @override
   bool get wantKeepAlive => true;
@@ -105,10 +104,8 @@ class _YamnetCardState extends State<YamnetCard>
     super.dispose();
   }
 
-  // 이벤트 적용: 유지 대상이면 _dangerUntil 갱신
   void _applyEvent(YamnetEvent? e) {
     if (e == null) {
-      // 이벤트가 잠깐 null이어도 기존 유지시간은 보존
       _startOrStopTicker();
       setState(() {});
       return;
@@ -117,21 +114,27 @@ class _YamnetCardState extends State<YamnetCard>
     final normalized = YamnetCard._normalizeLabelAndConf(e.label, e.confidence);
     final label = normalized.$1;
 
-    // 이번 이벤트 위험 여부 계산 후, 위험이면 마지막 위험 라벨 저장
     final isNonDangerLocal = YamnetCard._isNonDanger(label);
     final isDangerLocal = e.danger ?? !isNonDangerLocal;
     if (isDangerLocal) {
       _lastDangerKo = YamnetCard._labelKo(label);
     }
 
+    // 7초 유지 로직
     if (YamnetCard._shouldDelay(label)) {
       final now = DateTime.now();
-      // 이미 유지 중이면 그대로 두되, 종료 시각이 지났다면 새로 7초 부여
       if (_dangerUntil == null || now.isAfter(_dangerUntil!)) {
         _dangerUntil = now.add(const Duration(seconds: 7));
       }
-    } else {
-      // safe여도 남은 유지 시간이 있으면 끝날 때까지 유지 (변경 없음)
+    }
+
+    // ✅ 위험이면 푸시 알림 (중복 방지 포함)
+    if (isDangerLocal) {
+      final ko = YamnetCard._labelKo(label);
+      _notifyDangerOnce(
+        labelKo: ko,
+        payload: 'label=$ko;conf=${normalized.$2}',
+      );
     }
 
     _startOrStopTicker();
@@ -144,7 +147,6 @@ class _YamnetCardState extends State<YamnetCard>
     return DateTime.now().isBefore(until);
   }
 
-  // 유지 중이면 주기적으로 setState()해서 남은 시간/상태 반영
   void _startOrStopTicker() {
     final active = _isDelayActive;
     if (active && _tick == null) {
@@ -162,7 +164,29 @@ class _YamnetCardState extends State<YamnetCard>
     }
   }
 
-  // 방향(0~360 deg) 파서
+  // 🔔 푸시 알림 중복 방지 로직
+  Future<void> _notifyDangerOnce({
+    required String labelKo,
+    String? payload,
+  }) async {
+    const minGap = Duration(seconds: 10); // 최소 간격
+    final now = DateTime.now();
+
+    final labelChanged = _lastNotifyLabel != labelKo;
+    final timeOk =
+        _lastNotifyAt == null || now.difference(_lastNotifyAt!) >= minGap;
+
+    if (labelChanged || timeOk) {
+      await NotiService.I.showNow(
+        title: '위험 감지',
+        body: '$labelKo 소리가 감지되었습니다',
+        payload: payload ?? labelKo,
+      );
+      _lastNotifyAt = now;
+      _lastNotifyLabel = labelKo;
+    }
+  }
+
   double? _parseDirection(dynamic dir) {
     if (dir == null) return null;
     if (dir is num) {
@@ -193,13 +217,11 @@ class _YamnetCardState extends State<YamnetCard>
     if (widget.event == null) return const SizedBox.shrink();
     final e = widget.event!;
 
-    // 라벨/신뢰도 정규화
     final normalized = YamnetCard._normalizeLabelAndConf(e.label, e.confidence);
     final label = normalized.$1;
     final conf = normalized.$2;
     final safeConf = conf.isFinite ? conf.clamp(0.0, 1.0) : 0.0;
 
-    // 방향 정규화
     final double? rawDirDeg = _parseDirection(e.direction);
     final double? dirDeg = (rawDirDeg == null || !rawDirDeg.isFinite)
         ? null
@@ -209,11 +231,8 @@ class _YamnetCardState extends State<YamnetCard>
     final ko = YamnetCard._labelKo(label);
     final isNonDanger = YamnetCard._isNonDanger(label);
     final isDanger = e.danger ?? !isNonDanger;
-
-    // 지연(유지) 중이면 무조건 위험
     final effectiveIsDanger = _isDelayActive ? true : isDanger;
 
-    // 유지 중에 현재 라벨이 safe면, 마지막 위험 라벨을 제목으로 표시
     final String titleText = effectiveIsDanger
         ? (_isDelayActive && isNonDanger ? (_lastDangerKo ?? ko) : ko)
         : '안전';
@@ -230,14 +249,6 @@ class _YamnetCardState extends State<YamnetCard>
           )
         : const Icon(Icons.check_circle, color: Color(0xFF3BB273), size: 80);
 
-    // 남은 유지 시간(초) 표기용 (옵션)
-    final int remainMs = _dangerUntil == null
-        ? 0
-        : (_dangerUntil!.millisecondsSinceEpoch -
-                  DateTime.now().millisecondsSinceEpoch)
-              .clamp(0, 7000);
-    final double remainSec = remainMs / 1000.0;
-
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
       child: LayoutBuilder(
@@ -252,8 +263,6 @@ class _YamnetCardState extends State<YamnetCard>
                 children: [
                   mainSymbol,
                   const SizedBox(height: 12),
-
-                  // 🔴/🟢 큰 제목: 유지 중이면 마지막 위험 라벨, 아니면 안전/현재 라벨
                   Text(
                     titleText,
                     style: const TextStyle(
@@ -262,37 +271,13 @@ class _YamnetCardState extends State<YamnetCard>
                     ).copyWith(color: titleColor),
                     textAlign: TextAlign.center,
                   ),
-
-                  // 유지 안내 칩을 활성화하면 UX가 더 명확해집니다 (원하면 주석 해제)
-                  // if (_isDelayActive) ...[
-                  //   const SizedBox(height: 8),
-                  //   Chip(
-                  //     label: Text(
-                  //       '최근 위협 감지로 표시 유지 중 • ${remainSec.toStringAsFixed(1)}s',
-                  //       style: const TextStyle(
-                  //         fontSize: 14,
-                  //         fontWeight: FontWeight.w600,
-                  //       ),
-                  //     ),
-                  //     backgroundColor: const Color(0xFFFFF3F3),
-                  //     side: const BorderSide(color: Color(0xFFFFE0E0)),
-                  //     avatar: const Icon(
-                  //       Icons.timer,
-                  //       size: 18,
-                  //       color: Colors.redAccent,
-                  //     ),
-                  //   ),
-                  // ],
                   const SizedBox(height: 30),
-
                   if (dirDeg != null) ...[
                     const Text(
                       '방향 정보',
                       style: TextStyle(fontSize: 30, color: Colors.black87),
                     ),
                     const SizedBox(height: 25),
-
-                    // 회전만 적용(0°=위, 90°=오른쪽, 180°=아래, 270°=왼쪽)
                     Transform(
                       alignment: Alignment.center,
                       transform: Matrix4.identity()
@@ -311,46 +296,10 @@ class _YamnetCardState extends State<YamnetCard>
                         ),
                       ),
                     ),
-
                     const SizedBox(height: 16),
                   ],
-
-                  // 📊 보조 정보 (신뢰도/에너지) - 필요 시 주석 해제
-                  // Padding(
-                  //   padding: const EdgeInsets.only(top: 20),
-                  //   child: Wrap(
-                  //     alignment: WrapAlignment.center,
-                  //     spacing: 12,
-                  //     runSpacing: 12,
-                  //     children: [
-                  //       Chip(
-                  //         label: Text(
-                  //           '신뢰도 ${(safeConf * 100).toStringAsFixed(1)}%',
-                  //           style: const TextStyle(
-                  //             fontSize: 18,
-                  //             fontWeight: FontWeight.w600,
-                  //             color: Color(0xFF333333),
-                  //           ),
-                  //         ),
-                  //         backgroundColor: const Color(0xFFF3F6F9),
-                  //         side: const BorderSide(color: Color(0xFFE3E8EE)),
-                  //       ),
-                  //       if (energy != null)
-                  //         Chip(
-                  //           label: Text(
-                  //             '에너지 ${energy.toStringAsFixed(1)}',
-                  //             style: const TextStyle(
-                  //               fontSize: 18,
-                  //               fontWeight: FontWeight.w600,
-                  //               color: Color(0xFF333333),
-                  //             ),
-                  //           ),
-                  //           backgroundColor: const Color(0xFFF6F9FC),
-                  //           side: const BorderSide(color: Color(0xFFE3E8EE)),
-                  //         ),
-                  //     ],
-                  //   ),
-                  // ),
+                  // 보조 정보(신뢰도/에너지) 원하면 주석 해제
+                  // Chip(...) 등등
                 ],
               ),
             ),
